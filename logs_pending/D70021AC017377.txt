@@ -1,0 +1,63 @@
+Chroma 19053 Test report
+
+Program:	SR203.204
+S/N:		D70021AC017377
+TIME:		2026/08/26 14:08:26
+Total result:	Pass
+
+STEP:		1
+MODE:		WVAC
+EXT Name:	Ethernet 1
+Vtm:		1.062	KV
+Im:		0.349	mA
+Low:		0.200	mA
+High:		1.000	mA
+ARC Result:	---
+Result:		Pass
+Error Code:	
+
+STEP:		2
+MODE:		WVAC
+EXT Name:	Ethernet 2
+Vtm:		1.062	KV
+Im:		0.356	mA
+Low:		0.200	mA
+High:		1.000	mA
+ARC Result:	---
+Result:		Pass
+Error Code:	
+
+STEP:		3
+MODE:		WVAC
+EXT Name:	Ethernet 3
+Vtm:		1.062	KV
+Im:		0.359	mA
+Low:		0.200	mA
+High:		1.000	mA
+ARC Result:	---
+Result:		Pass
+Error Code:	
+
+STEP:		4
+MODE:		WVAC
+EXT Name:	Ethernet 4
+Vtm:		1.060	KV
+Im:		0.352	mA
+Low:		0.200	mA
+High:		1.000	mA
+ARC Result:	---
+Result:		Pass
+Error Code:	
+
+STEP:		5
+MODE:		WVAC
+EXT Name:	Modem
+Vtm:		1.500	KV
+Im:		0.125	mA
+Low:		0.050	mA
+High:		1.000	mA
+ARC Result:	---
+Result:		Pass
+Error Code:	
+
+Error Description: 

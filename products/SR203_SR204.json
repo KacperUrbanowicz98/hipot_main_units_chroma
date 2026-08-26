@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "product_id": "SR203_SR204",
+  "display_name": "SR203 / SR204",
+  "report_program": "SR203.204",
+  "revision": "A",
+  "notes": "JEDEN wspolny profil dla SR203 i SR204. Zrodlo: Profile_HiPot.xlsx - cztery warianty znalezione w firmie (SR203.204, NR801, SR203,204, SE210) dotycza tego samego wyrobu i zostaly ujednolicone do tego profilu. Przyjeto wariant zgodny z logiem ze stanowiska D21022AD023966.txt (24.08.2026): Ethernet 1-4 na kanalach 1-4, Modem jako krok 5 na kanale 5. UWAGA: warianty roznily sie PRZYPISANIEM KANALOW (1-5, 3-7, oraz 7+2-5). Ten profil zaklada, ze fixture na kazdym stanowisku jest okablowany tak samo - Ethernet 1-4 na kanaly 1-4, Modem na kanal 5. Przed uruchomieniem na nowym stanowisku POTWIERDZ okablowanie fixture. Identyfikacja wyrobu: operator wybiera profil z listy, mapa HWID nie jest uzywana. Numer seryjny: dokladnie 14 znakow, wylacznie wielkie litery A-Z i cyfry 0-9. ARC Limit 0 = wylaczony, Real Current 0 = wylaczony. Czestotliwosc 60 Hz jest ustawieniem globalnym testera.",
+  "instrument": {
+    "allowed_models": [
+      "19053"
+    ],
+    "requires_scan_box": true,
+    "channel_count": 8
+  },
+  "serial": {
+    "allowed_lengths": [
+      14
+    ],
+    "identify_by": "operator"
+  },
+  "test_timeout_s": 60,
+  "steps": [
+    {
+      "name": "Ethernet 1",
+      "mode": "ACW",
+      "voltage": 1060,
+      "limit_high": 1.0,
+      "limit_low": 0.2,
+      "presence_min_current": 0.2,
+      "ramp_time": 0.5,
+      "dwell": 1.0,
+      "ramp_dn": 0.5,
+      "arc_sense": 0.0,
+      "frequency": 60,
+      "continuity": "OFF",
+      "channels": "HOOOOOOO",
+      "real_limit": 0.0
+    },
+    {
+      "name": "Ethernet 2",
+      "mode": "ACW",
+      "voltage": 1060,
+      "limit_high": 1.0,
+      "limit_low": 0.2,
+      "presence_min_current": 0.2,
+      "ramp_time": 0.5,
+      "dwell": 1.0,
+      "ramp_dn": 0.5,
+      "arc_sense": 0.0,
+      "frequency": 60,
+      "continuity": "OFF",
+      "channels": "OHOOOOOO",
+      "real_limit": 0.0
+    },
+    {
+      "name": "Ethernet 3",
+      "mode": "ACW",
+      "voltage": 1060,
+      "limit_high": 1.0,
+      "limit_low": 0.2,
+      "presence_min_current": 0.2,
+      "ramp_time": 0.5,
+      "dwell": 1.0,
+      "ramp_dn": 0.5,
+      "arc_sense": 0.0,
+      "frequency": 60,
+      "continuity": "OFF",
+      "channels": "OOHOOOOO",
+      "real_limit": 0.0
+    },
+    {
+      "name": "Ethernet 4",
+      "mode": "ACW",
+      "voltage": 1060,
+      "limit_high": 1.0,
+      "limit_low": 0.2,
+      "presence_min_current": 0.2,
+      "ramp_time": 0.5,
+      "dwell": 1.0,
+      "ramp_dn": 0.5,
+      "arc_sense": 0.0,
+      "frequency": 60,
+      "continuity": "OFF",
+      "channels": "OOOHOOOO",
+      "real_limit": 0.0
+    },
+    {
+      "name": "Modem",
+      "mode": "ACW",
+      "voltage": 1500,
+      "limit_high": 1.0,
+      "limit_low": 0.05,
+      "presence_min_current": 0.05,
+      "ramp_time": 0.5,
+      "dwell": 1.0,
+      "ramp_dn": 0.5,
+      "arc_sense": 0.0,
+      "frequency": 60,
+      "continuity": "OFF",
+      "channels": "OOOOHOOO",
+      "real_limit": 0.0
+    }
+  ]
+}

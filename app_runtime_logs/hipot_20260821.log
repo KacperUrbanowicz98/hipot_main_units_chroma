@@ -1,0 +1,15 @@
+
+[08:17:00.662668][OUT] ========================================================================
+[08:17:00.662879][OUT] [RUNTIME] Start sesji: 2026-08-21T08:17:00+02:00
+[08:17:00.662928][OUT] [RUNTIME] PID: 46428
+[08:17:00.662973][OUT] [RUNTIME] Python: 3.13.3 | frozen=False
+[08:17:00.663014][OUT] [RUNTIME] Log: C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\app_runtime_logs\hipot_20260821.log
+[08:17:00.663051][OUT] ========================================================================
+[08:17:01.325935][OUT] [RUNTIME] Reconext Hi-Pot Main Units 1.0.0
+[08:17:01.326348][OUT] [RUNTIME] Diagnostyka sesji: C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\app_runtime_logs\hipot_20260821.log
+[08:17:01.383803][OUT] [RUNTIME] Stanowisko: HIPOT-SR203-01 | Chroma 19053 na COM2 @19200 | interlock COM11
+[08:17:01.383923][OUT] [RUNTIME] Profile: amidala, sr203_sr204
+[08:17:08.973007][OUT] [POLACZENIE] Blad: could not open port 'COM2': FileNotFoundError(2, 'Nie można odnaleźć określonego pliku.', None, 2)
+[08:17:08.974618][OUT] [INTERLOCK] Błąd połączenia: could not open port 'COM11': FileNotFoundError(2, 'Nie można odnaleźć określonego pliku.', None, 2)
+[08:17:28.702919][OUT] [STOP] Blad zatrzymania testu: Tester nie jest polaczony
+[08:17:28.703138][OUT] [INTERLOCK] Rozłączono

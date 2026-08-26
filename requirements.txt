@@ -1,0 +1,6 @@
+# Zaleznosci uruchomieniowe aplikacji (Windows, Python 3.13).
+# Instalacja: py -m pip install -r requirements.txt
+pyserial==3.5
+
+# Tylko do zbudowania EXE:
+pyinstaller==6.21.0

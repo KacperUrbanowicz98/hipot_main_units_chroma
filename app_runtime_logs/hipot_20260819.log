@@ -1,0 +1,14 @@
+
+[15:36:53.214014][OUT] ========================================================================
+[15:36:53.214216][OUT] [RUNTIME] Start sesji: 2026-08-19T15:36:53+02:00
+[15:36:53.214269][OUT] [RUNTIME] PID: 2168
+[15:36:53.214315][OUT] [RUNTIME] Python: 3.13.3 | frozen=False
+[15:36:53.214358][OUT] [RUNTIME] Log: C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\app_runtime_logs\hipot_20260819.log
+[15:36:53.214442][OUT] ========================================================================
+[15:36:53.501599][OUT] [RUNTIME] Reconext Hi-Pot 2.0.0
+[15:36:53.501728][OUT] [RUNTIME] Diagnostyka sesji: C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\app_runtime_logs\hipot_20260819.log
+[15:36:53.529586][OUT] [RUNTIME] Stanowisko: HIPOT-SR203-01 | Chroma 19053 na COM2 @19200 | interlock COM11
+[15:36:53.529690][OUT] [RUNTIME] Profile: amidala, sr203_sr204
+[15:37:02.854163][OUT] [AUDIT] SESJA/LOGOWANIE operator=12101333
+[15:37:08.761887][OUT] [AUDIT] PANEL/WEJSCIE operator=12101333 migracja hasla wymagana
+[15:37:22.441333][OUT] [AUDIT] ZMIANA/HASLO ustawiono nowe haslo panelu konfiguracji

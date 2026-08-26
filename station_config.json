@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "STATION_ID": "HIPOT-SR203-01",
+  "INSTRUMENT_MODEL": "19053",
+  "DEVICE_COM_PORT": "COM2",
+  "DEVICE_BAUDRATE": 19200,
+  "DEVICE_PARITY": "NONE",
+  "DEVICE_FLOW_CONTROL": "NONE",
+  "INTERLOCK_PORT": "COM11",
+  "INTERLOCK_BAUDRATE": 9600,
+  "INTERLOCK_ENABLED": true,
+  "LOG_DIR": "\\\\IFS\\hipot_logs\\SR203",
+  "AUTO_SAVE_RESULTS": true,
+  "SCPI_OVERRIDES": {},
+  "ENABLED_PRODUCTS": [
+    "SR203_SR204"
+  ],
+  "ADMIN_PASSWORD": {
+    "algo": "pbkdf2_sha256",
+    "iterations": 200000,
+    "salt": "5c5fa58c414809208ed0a0639adf3c96",
+    "hash": "a992a97276214571d6da46dd53d6e47f6f2782b8889a8f9b6a58f2da45454ead"
+  }
+}

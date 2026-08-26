@@ -1,0 +1,211 @@
+
+[12:53:20.121409][OUT] ========================================================================
+[12:53:20.122094][OUT] [RUNTIME] Start sesji: 2026-08-26T12:53:20+02:00
+[12:53:20.122217][OUT] [RUNTIME] PID: 33900
+[12:53:20.122323][OUT] [RUNTIME] Python: 3.13.3 | frozen=False
+[12:53:20.122414][OUT] [RUNTIME] Log: C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\app_runtime_logs\hipot_20260826.log
+[12:53:20.122495][OUT] ========================================================================
+[12:53:20.355135][OUT] [RUNTIME] Reconext Hi-Pot Main Units 1.0.0
+[12:53:20.355257][OUT] [RUNTIME] Diagnostyka sesji: C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\app_runtime_logs\hipot_20260826.log
+[12:53:20.374580][OUT] [RUNTIME] Stanowisko: HIPOT-SR203-01 | Chroma 19053 na COM2 @19200 | interlock COM11
+[12:53:20.374693][OUT] [RUNTIME] Profile: SR203_SR204
+[12:53:25.406065][OUT] [AUDIT] PANEL/WEJSCIE
+[13:01:13.139442][OUT] [AUDIT] PANEL/WEJSCIE
+[13:41:26.937302][ERR] Traceback (most recent call last):
+[13:41:26.943086][ERR]   File "C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\main.py", line 178, in <module>
+[13:41:26.943086][ERR]     raise SystemExit(main())
+[13:41:26.943086][ERR]                      ~~~~^^
+[13:41:26.943320][ERR]   File "C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\main.py", line 173, in main
+[13:41:26.943320][ERR]     root.mainloop()
+[13:41:26.943320][ERR]     ~~~~~~~~~~~~~^^
+[13:41:26.943372][ERR]   File "C:\Users\kacper.urbanowicz\AppData\Local\Programs\Python\Python313\Lib\tkinter\__init__.py", line 1599, in mainloop
+[13:41:26.943372][ERR]     self.tk.mainloop(n)
+[13:41:26.943372][ERR]     ~~~~~~~~~~~~~~~~^^^
+[13:41:26.943476][ERR] KeyboardInterrupt
+
+[13:41:27.196771][OUT] ========================================================================
+[13:41:27.197118][OUT] [RUNTIME] Start sesji: 2026-08-26T13:41:27+02:00
+[13:41:27.197211][OUT] [RUNTIME] PID: 49988
+[13:41:27.197293][OUT] [RUNTIME] Python: 3.13.3 | frozen=False
+[13:41:27.197370][OUT] [RUNTIME] Log: C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\app_runtime_logs\hipot_20260826.log
+[13:41:27.197458][OUT] ========================================================================
+[13:41:27.369883][OUT] [RUNTIME] Reconext Hi-Pot Main Units 1.0.0
+[13:41:27.369966][OUT] [RUNTIME] Diagnostyka sesji: C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\app_runtime_logs\hipot_20260826.log
+[13:41:27.393834][OUT] [RUNTIME] Stanowisko: HIPOT-SR203-01 | Chroma 19053 na COM2 @19200 | interlock COM11
+[13:41:27.393965][OUT] [RUNTIME] Profile: SR203_SR204
+[13:41:38.083160][OUT] [AUDIT] PANEL/WEJSCIE
+[14:04:40.614088][OUT] [AUDIT] PANEL/WEJSCIE
+[14:05:30.128960][OUT] [AUDIT] ZMIANA/INTERLOCK PORT: 'COM11' -> 'COM13'
+[14:05:37.397372][OUT] [AUDIT] ZMIANA/STANOWISKO PORT: 'COM2' -> 'COM11'
+[14:05:55.240893][OUT] [IDN] Brak odpowiedzi na *IDN?
+[14:06:36.347081][OUT] [IDN] Brak odpowiedzi na *IDN?
+[14:06:40.486048][OUT] [AUDIT] ZMIANA/STANOWISKO BAUD: 19200 -> 9600
+[14:06:44.357764][OUT] [IDN] Polaczono z: Chroma,19053,190530006638,5.14
+[14:06:44.651606][OUT] [KEYLOCK] ERR='+0,"No error"', STATE='1'
+[14:06:44.787452][OUT] [SONDA] idn                        OK  '*IDN?' -> resp='Chroma,19053,190530006638,5.14' err='+0,"No error"'
+[14:06:44.904007][OUT] [SONDA] error                      OK  'SYST:ERR?' -> resp='+0,"No error"' err='+0,"No error"'
+[14:06:45.004674][OUT] [SONDA] keylock_query              OK  'SYST:KLOC?' -> resp='1' err='+0,"No error"'
+[14:06:45.115940][OUT] [SONDA] step_count_query           OK  'SAFEty:SNUMber?' -> resp='+5' err='+0,"No error"'
+[14:06:45.230544][OUT] [SONDA] status_query               OK  'SAFEty:STATus?' -> resp='STOPPED' err='+0,"No error"'
+[14:06:45.572951][OUT] [SONDA] step_settings_query        OK  'SAFEty:STEP1:SET?' -> resp='1,AC,+1.060000E+03,+1.000000E-03,+2.000000E-04,+0.000000E+00,+1.000000E+00,+5.000000E-01,+5.000000E-01,+0.000000E+00,(@(1)),(@(0))' err='+0,"No error"'
+[14:06:45.689684][OUT] [SONDA] step_mode_query            OK  'SAFEty:STEP1:MODE?' -> resp='AC' err='+0,"No error"'
+[14:06:45.824046][OUT] [SONDA] acw_level_query            OK  'SAFEty:STEP1:AC?' -> resp='+1.060000E+03' err='+0,"No error"'
+[14:06:45.967119][OUT] [SONDA] acw_limit_high_query       OK  'SAFEty:STEP1:AC:LIMit?' -> resp='+1.000000E-03' err='+0,"No error"'
+[14:06:46.118023][OUT] [SONDA] acw_limit_low_query        OK  'SAFEty:STEP1:AC:LIMit:LOW?' -> resp='+2.000000E-04' err='+0,"No error"'
+[14:06:46.265583][OUT] [SONDA] acw_limit_arc_query        OK  'SAFEty:STEP1:AC:LIMit:ARC?' -> resp='+0.000000E+00' err='+0,"No error"'
+[14:06:46.414267][OUT] [SONDA] acw_limit_real_query       OK  'SAFEty:STEP1:AC:LIMit:REAL?' -> resp='+0.000000E+00' err='+0,"No error"'
+[14:06:46.557406][OUT] [SONDA] acw_time_test_query        OK  'SAFEty:STEP1:AC:TIME?' -> resp='+1.000000E+00' err='+0,"No error"'
+[14:06:46.707926][OUT] [SONDA] acw_time_ramp_query        OK  'SAFEty:STEP1:AC:TIME:RAMP?' -> resp='+5.000000E-01' err='+0,"No error"'
+[14:06:46.858772][OUT] [SONDA] acw_time_fall_query        OK  'SAFEty:STEP1:AC:TIME:FALL?' -> resp='+5.000000E-01' err='+0,"No error"'
+[14:06:47.007758][OUT] [SONDA] preset_frequency_query     OK  'SAFEty:PRESet:AC:FREQuency?' -> resp='+6.000000E+01' err='+0,"No error"'
+[14:06:47.135672][OUT] [SONDA] result_last_judgment       OK  'SAFEty:RESult:LAST:JUDG?' -> resp='116' err='+0,"No error"'
+[14:06:47.281069][OUT] [SONDA] result_last_voltage        OK  'SAFEty:RESult:LAST:OMET?' -> resp='+1.500000E+03' err='+0,"No error"'
+[14:06:47.426961][OUT] [SONDA] result_last_current        OK  'SAFEty:RESult:LAST:MMET?' -> resp='+1.250000E-04' err='+0,"No error"'
+[14:06:47.557063][OUT] [SONDA] result_step_judgment       OK  'SAFEty:RESult:STEP1:JUDG?' -> resp='116' err='+0,"No error"'
+[14:06:47.690860][OUT] [SONDA] channel_high_query         OK  'SAFEty:STEP1:AC:CHANnel?' -> resp='(@(1))' err='+0,"No error"'
+[14:06:47.830763][OUT] [SONDA] channel_low_query          OK  'SAFEty:STEP1:AC:CHANnel:LOW?' -> resp='(@(0))' err='+0,"No error"'
+[14:06:48.049948][OUT] [AUDIT] DIAGNOSTYKA/SONDA odrzucone=[]
+[14:07:49.499440][OUT] [IDN] Polaczono z: Chroma,19053,190530006638,5.14
+[14:07:49.792895][OUT] [KEYLOCK] ERR='+0,"No error"', STATE='1'
+[14:07:51.214680][OUT] [CONFIG] Czestotliwosc AC potwierdzona: 60 Hz
+[14:07:51.214832][OUT] [CONFIG] Krok 1 (Ethernet 1): 1060 V, LOW 0.200 mA, HIGH 1.000 mA
+[14:07:53.311441][OUT] [CONFIG] Krok 1: kanaly HIGH=[1] LOW=- (maska HOOOOOOO)
+[14:07:53.574920][OUT] [VERIFY] Krok 1: maska kanalow potwierdzona HOOOOOOO
+[14:07:53.575131][OUT] [VERIFY] Krok 1 potwierdzony odczytem zwrotnym
+[14:07:53.575225][OUT] [CONFIG] Krok 2 (Ethernet 2): 1060 V, LOW 0.200 mA, HIGH 1.000 mA
+[14:07:55.673780][OUT] [CONFIG] Krok 2: kanaly HIGH=[2] LOW=- (maska OHOOOOOO)
+[14:07:55.937758][OUT] [VERIFY] Krok 2: maska kanalow potwierdzona OHOOOOOO
+[14:07:55.938164][OUT] [VERIFY] Krok 2 potwierdzony odczytem zwrotnym
+[14:07:55.938304][OUT] [CONFIG] Krok 3 (Ethernet 3): 1060 V, LOW 0.200 mA, HIGH 1.000 mA
+[14:07:58.038232][OUT] [CONFIG] Krok 3: kanaly HIGH=[3] LOW=- (maska OOHOOOOO)
+[14:07:58.302084][OUT] [VERIFY] Krok 3: maska kanalow potwierdzona OOHOOOOO
+[14:07:58.302301][OUT] [VERIFY] Krok 3 potwierdzony odczytem zwrotnym
+[14:07:58.302389][OUT] [CONFIG] Krok 4 (Ethernet 4): 1060 V, LOW 0.200 mA, HIGH 1.000 mA
+[14:08:00.407840][OUT] [CONFIG] Krok 4: kanaly HIGH=[4] LOW=- (maska OOOHOOOO)
+[14:08:00.672130][OUT] [VERIFY] Krok 4: maska kanalow potwierdzona OOOHOOOO
+[14:08:00.672381][OUT] [VERIFY] Krok 4 potwierdzony odczytem zwrotnym
+[14:08:00.672492][OUT] [CONFIG] Krok 5 (Modem): 1500 V, LOW 0.050 mA, HIGH 1.000 mA
+[14:08:02.770261][OUT] [CONFIG] Krok 5: kanaly HIGH=[5] LOW=- (maska OOOOHOOO)
+[14:08:03.034112][OUT] [VERIFY] Krok 5: maska kanalow potwierdzona OOOOHOOO
+[14:08:03.034250][OUT] [VERIFY] Krok 5 potwierdzony odczytem zwrotnym
+[14:08:03.067093][OUT] [CONFIG] Zaprogramowano 5 krokow profilu SR203 / SR204
+[14:08:03.067405][OUT] [SAMPLING] Szacowane próbki na krok: 500.0 (dwell 1.00 s, cykl odpytania 2 ms)
+[14:08:04.609622][OUT] [INTERLOCK] Połączono: COM13 @ 9600
+[14:08:04.696960][OUT] [INTERLOCK] Zmiana stanu: 'OPEN'
+[14:08:11.610048][OUT] [INTERLOCK] Zmiana stanu: 'CLOSED'
+[14:08:12.686570][OUT] [START] ERR='+0,"No error"', KLOC='1'
+[14:08:12.882846][OUT] [START] Potwierdzono nowy cykl #1
+[14:08:26.197353][OUT] [WYNIK] Krok 1 (Ethernet 1): PASS kod=116 1062 V 0.3490 mA
+[14:08:26.197577][OUT] [WYNIK] Krok 2 (Ethernet 2): PASS kod=116 1062 V 0.3560 mA
+[14:08:26.197657][OUT] [WYNIK] Krok 3 (Ethernet 3): PASS kod=116 1062 V 0.3590 mA
+[14:08:26.197730][OUT] [WYNIK] Krok 4 (Ethernet 4): PASS kod=116 1060 V 0.3520 mA
+[14:08:26.197803][OUT] [WYNIK] Krok 5 (Modem): PASS kod=116 1500 V 0.1250 mA
+[14:08:26.197957][OUT] [DOWODY] Krok 1 (Ethernet 1): próbek 2, w zakresie 2, max 1062 V / 0.350 mA
+[14:08:26.198058][OUT] [DOWODY] Krok 2 (Ethernet 2): próbek 5, w zakresie 2, max 1060 V / 0.359 mA
+[14:08:26.198143][OUT] [DOWODY] Krok 3 (Ethernet 3): próbek 4, w zakresie 2, max 1062 V / 0.361 mA
+[14:08:26.198226][OUT] [DOWODY] Krok 4 (Ethernet 4): próbek 5, w zakresie 2, max 1060 V / 0.352 mA
+[14:08:26.198308][OUT] [DOWODY] Krok 5 (Modem): próbek 4, w zakresie 2, max 1502 V / 0.125 mA
+[14:08:31.501252][OUT] [LOG] Sciezka podstawowa niedostepna: \\IFS\hipot_logs\SR203 ([WinError 53] Nie można odnaleźć ścieżki sieciowej: '\\\\IFS\\hipot_logs\\')
+[14:08:31.501510][OUT] [LOG] Zapis awaryjny: C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\logs_pending\D70021AC017377.txt
+[14:08:34.110736][OUT] [INTERLOCK] Zmiana stanu: 'OPEN'
+[14:08:36.219784][OUT] [INTERLOCK] Zmiana stanu: 'CLOSED'
+[14:08:36.802813][OUT] [INTERLOCK] Zmiana stanu: 'OPEN'
+[14:09:28.075874][OUT] [INTERLOCK] Zmiana stanu: 'CLOSED'
+[14:09:28.707774][OUT] [INTERLOCK] Zmiana stanu: 'OPEN'
+[14:10:55.020521][OUT] [INTERLOCK] Zmiana stanu: 'CLOSED'
+[14:10:57.525436][OUT] [INTERLOCK] Zmiana stanu: 'OPEN'
+[14:10:57.997577][OUT] [INTERLOCK] Zmiana stanu: 'CLOSED'
+[14:11:04.117483][OUT] [INTERLOCK] Zmiana stanu: 'OPEN'
+[14:11:04.739363][OUT] [INTERLOCK] Zmiana stanu: 'CLOSED'
+[14:11:25.158084][OUT] [INTERLOCK] Zmiana stanu: 'OPEN'
+[14:11:27.713498][OUT] [INTERLOCK] Zmiana stanu: 'CLOSED'
+[14:11:30.032125][OUT] [INTERLOCK] Zmiana stanu: 'OPEN'
+[14:11:32.714282][OUT] [INTERLOCK] Zmiana stanu: 'CLOSED'
+[14:11:34.861488][OUT] [INTERLOCK] Zmiana stanu: 'OPEN'
+[14:11:49.531839][OUT] [INTERLOCK] Zmiana stanu: 'CLOSED'
+[14:11:58.492407][OUT] [INTERLOCK] Rozłączono
+[14:12:05.566143][OUT] [IDN] Polaczono z: Chroma,19053,190530006638,5.14
+[14:12:05.860241][OUT] [KEYLOCK] ERR='+0,"No error"', STATE='1'
+[14:12:07.286019][OUT] [CONFIG] Czestotliwosc AC potwierdzona: 60 Hz
+[14:12:07.286172][OUT] [CONFIG] Krok 1 (Ethernet 1): 1060 V, LOW 0.200 mA, HIGH 1.000 mA
+[14:12:09.380930][OUT] [CONFIG] Krok 1: kanaly HIGH=[1] LOW=- (maska HOOOOOOO)
+[14:12:09.644546][OUT] [VERIFY] Krok 1: maska kanalow potwierdzona HOOOOOOO
+[14:12:09.644738][OUT] [VERIFY] Krok 1 potwierdzony odczytem zwrotnym
+[14:12:09.644820][OUT] [CONFIG] Krok 2 (Ethernet 2): 1060 V, LOW 0.200 mA, HIGH 1.000 mA
+[14:12:11.745805][OUT] [CONFIG] Krok 2: kanaly HIGH=[2] LOW=- (maska OHOOOOOO)
+[14:12:12.009801][OUT] [VERIFY] Krok 2: maska kanalow potwierdzona OHOOOOOO
+[14:12:12.010084][OUT] [VERIFY] Krok 2 potwierdzony odczytem zwrotnym
+[14:12:12.010192][OUT] [CONFIG] Krok 3 (Ethernet 3): 1060 V, LOW 0.200 mA, HIGH 1.000 mA
+[14:12:14.107793][OUT] [CONFIG] Krok 3: kanaly HIGH=[3] LOW=- (maska OOHOOOOO)
+[14:12:14.371833][OUT] [VERIFY] Krok 3: maska kanalow potwierdzona OOHOOOOO
+[14:12:14.372046][OUT] [VERIFY] Krok 3 potwierdzony odczytem zwrotnym
+[14:12:14.372128][OUT] [CONFIG] Krok 4 (Ethernet 4): 1060 V, LOW 0.200 mA, HIGH 1.000 mA
+[14:12:16.469915][OUT] [CONFIG] Krok 4: kanaly HIGH=[4] LOW=- (maska OOOHOOOO)
+[14:12:16.733803][OUT] [VERIFY] Krok 4: maska kanalow potwierdzona OOOHOOOO
+[14:12:16.734095][OUT] [VERIFY] Krok 4 potwierdzony odczytem zwrotnym
+[14:12:16.734201][OUT] [CONFIG] Krok 5 (Modem): 1500 V, LOW 0.050 mA, HIGH 1.000 mA
+[14:12:18.835530][OUT] [CONFIG] Krok 5: kanaly HIGH=[5] LOW=- (maska OOOOHOOO)
+[14:12:19.100114][OUT] [VERIFY] Krok 5: maska kanalow potwierdzona OOOOHOOO
+[14:12:19.100394][OUT] [VERIFY] Krok 5 potwierdzony odczytem zwrotnym
+[14:12:19.133462][OUT] [CONFIG] Zaprogramowano 5 krokow profilu SR203 / SR204
+[14:12:19.133669][OUT] [SAMPLING] Szacowane próbki na krok: 500.0 (dwell 1.00 s, cykl odpytania 2 ms)
+[14:12:20.650852][OUT] [INTERLOCK] Połączono: COM13 @ 9600
+[14:12:20.748364][OUT] [INTERLOCK] Zmiana stanu: 'OPEN'
+[14:12:23.137549][OUT] [INTERLOCK] Zmiana stanu: 'CLOSED'
+[14:12:24.151841][OUT] [START] ERR='+0,"No error"', KLOC='1'
+[14:12:24.367875][OUT] [START] Potwierdzono nowy cykl #1
+[14:12:37.467169][OUT] [WYNIK] Krok 1 (Ethernet 1): PASS kod=116 1058 V 0.3490 mA
+[14:12:37.467396][OUT] [WYNIK] Krok 2 (Ethernet 2): PASS kod=116 1062 V 0.3560 mA
+[14:12:37.467489][OUT] [WYNIK] Krok 3 (Ethernet 3): PASS kod=116 1062 V 0.3580 mA
+[14:12:37.467604][OUT] [WYNIK] Krok 4 (Ethernet 4): PASS kod=116 1058 V 0.3490 mA
+[14:12:37.467678][OUT] [WYNIK] Krok 5 (Modem): PASS kod=116 1500 V 0.1250 mA
+[14:12:37.467777][OUT] [DOWODY] Krok 1 (Ethernet 1): próbek 2, w zakresie 2, max 1062 V / 0.349 mA
+[14:12:37.467874][OUT] [DOWODY] Krok 2 (Ethernet 2): próbek 5, w zakresie 2, max 1060 V / 0.356 mA
+[14:12:37.467951][OUT] [DOWODY] Krok 3 (Ethernet 3): próbek 5, w zakresie 2, max 1060 V / 0.359 mA
+[14:12:37.468025][OUT] [DOWODY] Krok 4 (Ethernet 4): próbek 4, w zakresie 2, max 1060 V / 0.350 mA
+[14:12:37.468099][OUT] [DOWODY] Krok 5 (Modem): próbek 5, w zakresie 2, max 1500 V / 0.125 mA
+[14:12:41.562530][OUT] [INTERLOCK] Zmiana stanu: 'OPEN'
+[14:12:42.677059][OUT] [LOG] Sciezka podstawowa niedostepna: \\IFS\hipot_logs\SR203 ([WinError 53] Nie można odnaleźć ścieżki sieciowej: '\\\\IFS\\hipot_logs\\')
+[14:12:42.677304][OUT] [LOG] Zapis awaryjny: C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\logs_pending\D70021AC017378.txt
+[14:12:53.183427][OUT] [INTERLOCK] Zmiana stanu: 'CLOSED'
+[14:12:56.341743][OUT] [INTERLOCK] Zmiana stanu: 'OPEN'
+[14:13:18.536322][OUT] [INTERLOCK] Błąd pętli (1): ClearCommError failed (PermissionError(13, 'Urządzenie nie rozpoznaje polecenia.', None, 22))
+[14:13:19.037174][OUT] [INTERLOCK] Błąd pętli (2): ClearCommError failed (PermissionError(13, 'Urządzenie nie rozpoznaje polecenia.', None, 22))
+[14:13:19.537723][OUT] [INTERLOCK] Błąd pętli (3): ClearCommError failed (PermissionError(13, 'Urządzenie nie rozpoznaje polecenia.', None, 22))
+[14:13:20.038393][OUT] [INTERLOCK] Błąd pętli (4): ClearCommError failed (PermissionError(13, 'Urządzenie nie rozpoznaje polecenia.', None, 22))
+[14:13:20.539107][OUT] [INTERLOCK] Błąd pętli (5): ClearCommError failed (PermissionError(13, 'Urządzenie nie rozpoznaje polecenia.', None, 22))
+[14:13:20.539418][OUT] [INTERLOCK] Utrata komunikacji: 5 kolejnych błędów portu
+[14:42:12.077056][ERR] Traceback (most recent call last):
+[14:42:12.082416][ERR]   File "C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\main.py", line 178, in <module>
+[14:42:12.082416][ERR]     raise SystemExit(main())
+[14:42:12.082416][ERR]                      ~~~~^^
+[14:42:12.082574][ERR]   File "C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\main.py", line 173, in main
+[14:42:12.082574][ERR]     root.mainloop()
+[14:42:12.082574][ERR]     ~~~~~~~~~~~~~^^
+[14:42:12.082659][ERR]   File "C:\Users\kacper.urbanowicz\AppData\Local\Programs\Python\Python313\Lib\tkinter\__init__.py", line 1599, in mainloop
+[14:42:12.082659][ERR]     self.tk.mainloop(n)
+[14:42:12.082659][ERR]     ~~~~~~~~~~~~~~~~^^^
+[14:42:12.082749][ERR] KeyboardInterrupt
+
+[14:42:12.425249][OUT] ========================================================================
+[14:42:12.425536][OUT] [RUNTIME] Start sesji: 2026-08-26T14:42:12+02:00
+[14:42:12.427482][OUT] [RUNTIME] PID: 46184
+[14:42:12.427753][OUT] [RUNTIME] Python: 3.13.3 | frozen=False
+[14:42:12.427818][OUT] [RUNTIME] Log: C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\app_runtime_logs\hipot_20260826.log
+[14:42:12.427872][OUT] ========================================================================
+[14:42:12.676983][OUT] [RUNTIME] Reconext Hi-Pot Main Units 1.0.0
+[14:42:12.677157][OUT] [RUNTIME] Diagnostyka sesji: C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\app_runtime_logs\hipot_20260826.log
+[14:42:12.708164][OUT] [RUNTIME] Stanowisko: HIPOT-SR203-01 | Chroma 19053 na COM2 @19200 | interlock COM11
+[14:42:12.708274][OUT] [RUNTIME] Profile: SR203_SR204
+[14:42:21.350821][OUT] [AUDIT] PANEL/WEJSCIE
+[14:42:49.245536][ERR] Traceback (most recent call last):
+[14:42:49.248281][ERR]   File "C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\main.py", line 178, in <module>
+[14:42:49.248281][ERR]     raise SystemExit(main())
+[14:42:49.248281][ERR]                      ~~~~^^
+[14:42:49.248373][ERR]   File "C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\main.py", line 173, in main
+[14:42:49.248373][ERR]     root.mainloop()
+[14:42:49.248373][ERR]     ~~~~~~~~~~~~~^^
+[14:42:49.248408][ERR]   File "C:\Users\kacper.urbanowicz\AppData\Local\Programs\Python\Python313\Lib\tkinter\__init__.py", line 1599, in mainloop
+[14:42:49.248408][ERR]     self.tk.mainloop(n)
+[14:42:49.248408][ERR]     ~~~~~~~~~~~~~~~~^^^
+[14:42:49.248450][ERR] KeyboardInterrupt
