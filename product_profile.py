@@ -1,12 +1,12 @@
 """Profile produktow: definicja sekwencji testowej dla jednego wyrobu.
 
 Profil jest DANYMI, nie kodem. Dodanie kolejnego produktu na Chromie sprowadza
-sie do dodania pliku JSON w katalogu ``products`` i wpisow w mapie HWID -
-bez rekompilacji EXE i bez ponownego przechodzenia walidacji oprogramowania.
+sie do dodania pliku JSON w katalogu ``products`` - bez rekompilacji EXE
+i bez ponownego przechodzenia walidacji oprogramowania.
 
 Kazdy profil przechodzi pelna walidacje ``safety_rules`` przy wczytaniu.
 Profil, ktory jej nie przejdzie, nie jest "pomijany" - blokuje uruchomienie
-testu dla wszystkich przypisanych do niego HWID.
+testu dla tego produktu.
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ from safety_rules import (
     channel_masks_overlap,
     profile_duration,
     step_duration,
+    validate_report_text,
     validate_serial,
     validate_step,
     validate_timeout_for_steps,
@@ -52,9 +53,9 @@ class ProductProfile:
                 f"{source}: product_id musi zawierac litery, cyfry lub podkreslenia"
             )
 
-        self.display_name = str(
-            data.get("display_name", self.product_id)
-        ).strip() or self.product_id
+        self.display_name = validate_report_text(
+            data.get("display_name") or self.product_id,
+            f"{source}: display_name", max_length=40)
 
         instrument = data.get("instrument", {})
         if not isinstance(instrument, Mapping):
@@ -100,22 +101,6 @@ class ProductProfile:
                 f"{source}: serial.allowed_lengths poza zakresem 4-64"
             )
 
-        # Skad aplikacja wie, ktory profil uruchomic dla zeskanowanej sztuki:
-        #   "hwid"     - z mapy HWID (pierwsze 6 znakow S/N). Wyrob sam mowi,
-        #                czym jest; operator nie moze tego nadpisac.
-        #   "operator" - z listy wyboru na ekranie startowym. Uzywane tam,
-        #                gdzie numery seryjne nie niosa informacji o wyrobie.
-        #                Numer seryjny jest wtedy sprawdzany wylacznie pod
-        #                katem dlugosci i zestawu znakow (wielkie litery
-        #                A-Z i cyfry 0-9).
-        identify_by = str(serial_rules.get("identify_by", "hwid")).strip().lower()
-        if identify_by not in ("hwid", "operator"):
-            raise SafetyValidationError(
-                f"{source}: serial.identify_by musi byc 'hwid' albo 'operator', "
-                f"jest {identify_by!r}"
-            )
-        self.identify_by = identify_by
-
         raw_steps = data.get("steps", [])
         if not isinstance(raw_steps, Sequence) or isinstance(raw_steps, (str, bytes)):
             raise SafetyValidationError(f"{source}: steps musi byc lista")
@@ -150,16 +135,13 @@ class ProductProfile:
         self.revision = str(data.get("revision", "")).strip()
         # Nazwa programu drukowana w polu "Program:" raportu. Odpowiada nazwie
         # pliku .stp w oprogramowaniu Chromy, wiec bywa inna niz display_name.
-        self.report_program = str(
-            data.get("report_program", "") or self.display_name
-        ).strip()
+        # To pole trafia wprost do linii "Program:" raportu - musi przejsc
+        # ta sama kontrole znakow co nazwy krokow.
+        self.report_program = validate_report_text(
+            data.get("report_program") or self.display_name,
+            f"{source}: report_program", max_length=40)
 
     # ------------------------------------------------------------------ #
-    @property
-    def requires_hwid(self) -> bool:
-        """True, jesli profil jest rozpoznawany z mapy HWID."""
-        return self.identify_by == "hwid"
-
     @property
     def step_count(self) -> int:
         return len(self.steps)
@@ -197,10 +179,7 @@ class ProductProfile:
                 "allowed_models": list(self.allowed_models),
                 "requires_scan_box": self.requires_scan_box,
             },
-            "serial": {
-                "allowed_lengths": list(self.serial_lengths),
-                "identify_by": self.identify_by,
-            },
+            "serial": {"allowed_lengths": list(self.serial_lengths)},
             "test_timeout_s": self.test_timeout_s,
             "steps": [dict(step) for step in self.steps],
         }
@@ -213,27 +192,6 @@ class ProductProfile:
         if self.notes:
             payload["notes"] = self.notes
         return payload
-
-    def summary_lines(self) -> list[str]:
-        lines = [
-            f"Produkt: {self.display_name} ({self.product_id})",
-            "Identyfikacja: " + ("mapa HWID" if self.requires_hwid
-                                 else "wybor operatora z listy")
-            + f" | S/N: {'/'.join(str(x) for x in self.serial_lengths)} znakow",
-            f"Tester: {', '.join(self.allowed_models)}"
-            + (f", scan box {self.channel_count} kan." if self.channel_count else ""),
-            f"Kroki: {self.step_count} | czas cyklu: {self.total_duration:.1f} s "
-            f"| timeout: {self.test_timeout_s} s",
-        ]
-        for index, step in enumerate(self.steps, start=1):
-            channels = f" | kanaly {step['channels']}" if step.get("channels") else ""
-            lines.append(
-                f"  {index}. {step['name']}: {step['voltage'] / 1000:.2f} kV, "
-                f"{self.effective_low_ma(step):.3f}-{step['limit_high']:.3f} mA, "
-                f"{step['ramp_time']:.1f}/{step['dwell']:.1f}/{step['ramp_dn']:.1f} s"
-                f"{channels}"
-            )
-        return lines
 
 
 # ---------------------------------------------------------------------- #
@@ -249,9 +207,13 @@ class ProductCatalog:
         self.reload()
 
     def reload(self) -> None:
-        self._profiles.clear()
-        self._errors.clear()
+        """Przeladowuje katalog profili.
 
+        S1: budujemy NOWY slownik i podstawiamy go dopiero po powodzeniu.
+        Wczesniej katalog byl czyszczony na wejsciu, wiec nieudany zapis
+        profilu zostawial aplikacje z zerem profili, a operator widzial
+        mylace "Zaden profil nie jest wlaczony na tym stanowisku".
+        """
         if not self.directory.is_dir():
             raise SafetyValidationError(
                 f"Brak katalogu profilow produktow: {self.directory}"
@@ -317,3 +279,48 @@ class ProductCatalog:
         atomic_write_json(path, profile.to_dict())
         self.reload()
         return path
+
+class ScanResult:
+    """Zeskanowany numer seryjny gotowy do uruchomienia testu.
+
+    Na Chromie profil wskazuje operator z listy na ekranie startowym, a numer
+    seryjny jest sprawdzany wylacznie co do dlugosci i zestawu znakow.
+    Nie ma mapy HWID: numery wyrobow testowanych na tych stanowiskach nie
+    niosa informacji o modelu, wiec nie bylo z czego go odczytac.
+    """
+
+    __slots__ = ("serial", "profile")
+
+    def __init__(self, serial: str, profile: "ProductProfile"):
+        self.serial = serial
+        self.profile = profile
+
+    @property
+    def product_id(self) -> str:
+        return self.profile.product_id
+
+    @property
+    def model_name(self) -> str:
+        return self.profile.display_name
+
+    def __repr__(self) -> str:
+        return f"ScanResult({self.serial!r}, {self.profile.product_id!r})"
+
+
+def resolve_serial(profile: "ProductProfile", serial: str
+                   ) -> tuple[bool, object]:
+    """Sprawdza numer seryjny wedlug regul profilu.
+
+    JEDNO miejsce dla wszystkich ekranow - ekran startowy i okno "nastepny
+    numer seryjny" MUSZA isc ta sama droga. Gdy mialy osobne implementacje,
+    okno S/N zostalo w tyle po zmianie regul i odrzucalo poprawne numery.
+
+    Zwraca ``(True, ScanResult)`` albo ``(False, komunikat dla operatora)``.
+    """
+    if profile is None:
+        return False, "Nie wybrano profilu testowego"
+    try:
+        normalized = profile.validate_serial(serial)
+    except SafetyValidationError as exc:
+        return False, str(exc)
+    return True, ScanResult(serial=normalized, profile=profile)

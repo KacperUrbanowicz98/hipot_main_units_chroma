@@ -1,4 +1,4 @@
-"""Trwala konfiguracja stanowiska i mapa HWID.
+"""Trwala konfiguracja stanowiska.
 
 Rozdzial odpowiedzialnosci wzgledem aplikacji Amidala:
 
@@ -6,7 +6,6 @@ Rozdzial odpowiedzialnosci wzgledem aplikacji Amidala:
   testera). Rozne na kazdym stanowisku, nie podlegaja walidacji technologicznej.
 * ``products/*.json``      - PROFILE PRODUKTOW (napiecia, limity, kanaly).
   Identyczne na wszystkich stanowiskach, podlegaja zatwierdzeniu.
-* ``hwid_map.json``        - przypisanie HWID -> (produkt, nazwa modelu).
 
 Dzieki temu przeniesienie stanowiska na inny COM nie wymaga dotykania profilu
 testowego, a zmiana profilu nie wymaga dotykania ustawien stanowiska.
@@ -28,7 +27,6 @@ from safety_rules import (
 from security import validate_password_record
 
 STATION_CONFIG_FILE = "station_config.json"
-HWID_MAP_FILE = "hwid_map.json"
 SCHEMA_VERSION = 1
 
 
@@ -66,65 +64,6 @@ def load_json_object(path: str | os.PathLike[str]) -> dict:
 
 
 class SettingsManager:
-
-    # ------------------------------------------------------------------ #
-    # MAPA HWID
-    # ------------------------------------------------------------------ #
-    @staticmethod
-    def _normalize_hwid_entry(raw_hwid: Any, raw_entry: Any) -> tuple[str, dict[str, str]]:
-        hwid = str(raw_hwid).strip().upper()
-        if len(hwid) != 6 or not hwid.isascii() or not hwid.isalnum():
-            raise SafetyValidationError(
-                f"Nieprawidlowy HWID w {HWID_MAP_FILE}: {raw_hwid!r} "
-                "(wymagane dokladnie 6 liter/cyfr)"
-            )
-
-        if isinstance(raw_entry, Mapping):
-            product = str(raw_entry.get("product", "")).strip().upper()
-            model = str(raw_entry.get("model", "")).strip()
-        elif isinstance(raw_entry, str) and ":" in raw_entry:
-            # Zapis skrocony "produkt:Model" dopuszczony dla wygody edycji reczej.
-            product, _, model = raw_entry.partition(":")
-            product = product.strip().upper()
-            model = model.strip()
-        else:
-            raise SafetyValidationError(
-                f"HWID {hwid}: wpis musi byc obiektem "
-                '{"product": "...", "model": "..."} albo tekstem "produkt:Model"'
-            )
-
-        if not product:
-            raise SafetyValidationError(f"HWID {hwid}: brak identyfikatora produktu")
-        if not model:
-            raise SafetyValidationError(f"HWID {hwid}: brak nazwy modelu")
-        return hwid, {"product": product, "model": model}
-
-    def load_hwid_map(self) -> dict[str, dict[str, str]]:
-        if not os.path.exists(HWID_MAP_FILE):
-            raise SafetyValidationError(
-                f"Brak wymaganego pliku mapy HWID: {HWID_MAP_FILE}"
-            )
-        data = load_json_object(HWID_MAP_FILE)
-        data.pop("schema_version", None)
-
-        normalized: dict[str, dict[str, str]] = {}
-        for raw_hwid, raw_entry in data.items():
-            hwid, entry = self._normalize_hwid_entry(raw_hwid, raw_entry)
-            normalized[hwid] = entry
-        # Pusta mapa jest dopuszczalna: profile z serial.identify_by ==
-        # "operator" (jak SR203_SR204) nie korzystaja z HWID. Profil
-        # identyfikowany z HWID przy pustej mapie zostanie odrzucony przy
-        # skanie z komunikatem "Nieznany HWID" - glosno, nie po cichu.
-        return normalized
-
-    def save_hwid_map(self, hwid_map: Mapping[str, Any]) -> None:
-        normalized: dict[str, Any] = {}
-        for raw_hwid, raw_entry in hwid_map.items():
-            hwid, entry = self._normalize_hwid_entry(raw_hwid, raw_entry)
-            normalized[hwid] = entry
-        payload: dict[str, Any] = {"schema_version": SCHEMA_VERSION}
-        payload.update(dict(sorted(normalized.items())))
-        atomic_write_json(HWID_MAP_FILE, payload)
 
     # ------------------------------------------------------------------ #
     # KONFIGURACJA STANOWISKA
@@ -209,6 +148,14 @@ class SettingsManager:
             "INSTRUMENT_MODEL": model,
             "STATION_ID": station_id,
             "LOG_DIR": log_dir,
+            "INTERLOCK_IDENTITY": str(
+                source.get("INTERLOCK_IDENTITY",
+                           getattr(config, "INTERLOCK_IDENTITY", "")) or ""
+            ).strip().upper(),
+            "PROFILE_MANIFEST_PATH": str(
+                source.get("PROFILE_MANIFEST_PATH",
+                           getattr(config, "PROFILE_MANIFEST_PATH", "")) or ""
+            ).strip(),
             "AUTO_SAVE_RESULTS": auto_save,
             "ENABLED_PRODUCTS": enabled_products,
             "SCPI_OVERRIDES": dict(overrides),
@@ -222,7 +169,8 @@ class SettingsManager:
                 "DEVICE_COM_PORT", "DEVICE_BAUDRATE", "DEVICE_PARITY",
                 "DEVICE_FLOW_CONTROL", "INTERLOCK_PORT", "INTERLOCK_BAUDRATE",
                 "INTERLOCK_ENABLED", "INSTRUMENT_MODEL", "STATION_ID",
-                "LOG_DIR", "AUTO_SAVE_RESULTS", "ENABLED_PRODUCTS",
+                "LOG_DIR", "PROFILE_MANIFEST_PATH", "INTERLOCK_IDENTITY",
+                "AUTO_SAVE_RESULTS", "ENABLED_PRODUCTS",
                 "SCPI_OVERRIDES", "ADMIN_PASSWORD",
             )
         }

@@ -1,0 +1,24 @@
+
+[11:58:21.384286][OUT] ========================================================================
+[11:58:21.384554][OUT] [RUNTIME] Start sesji: 2026-09-08T11:58:21+02:00
+[11:58:21.384609][OUT] [RUNTIME] PID: 110436
+[11:58:21.384652][OUT] [RUNTIME] Python: 3.13.3 | frozen=False
+[11:58:21.384695][OUT] [RUNTIME] Log: C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\app_runtime_logs\hipot_20260908.log
+[11:58:21.384730][OUT] ========================================================================
+[11:58:21.580474][OUT] [RUNTIME] Reconext Hi-Pot Main Units 1.0.0
+[11:58:21.580589][OUT] [RUNTIME] Diagnostyka sesji: C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\app_runtime_logs\hipot_20260908.log
+[11:58:22.055112][OUT] [RUNTIME] Stanowisko: HIPOT-SR203-01 | Chroma 19053 na COM2 @19200 | interlock COM11
+[11:58:22.055228][OUT] [RUNTIME] Profile: ER115, SE210, SR203_SR204, SR213
+[11:58:27.844739][OUT] [AUDIT] PANEL/WEJSCIE
+[12:00:20.274288][OUT] [POLACZENIE] Blad: could not open port 'COM2': FileNotFoundError(2, 'Nie można odnaleźć określonego pliku.', None, 2)
+[08:22:16.618823][ERR] Traceback (most recent call last):
+[08:22:16.634297][ERR]   File "C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\main.py", line 178, in <module>
+[08:22:16.634297][ERR]     raise SystemExit(main())
+[08:22:16.634297][ERR]                      ~~~~^^
+[08:22:16.634504][ERR]   File "C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\main.py", line 173, in main
+[08:22:16.634504][ERR]     root.mainloop()
+[08:22:16.634504][ERR]     ~~~~~~~~~~~~~^^
+[08:22:16.634633][ERR]   File "C:\Users\kacper.urbanowicz\AppData\Local\Programs\Python\Python313\Lib\tkinter\__init__.py", line 1599, in mainloop
+[08:22:16.634633][ERR]     self.tk.mainloop(n)
+[08:22:16.634633][ERR]     ~~~~~~~~~~~~~~~~^^^
+[08:22:16.634794][ERR] KeyboardInterrupt

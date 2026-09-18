@@ -1,0 +1,119 @@
+{
+  "schema_version": 1,
+  "product_id": "SR213",
+  "display_name": "SR213",
+  "report_program": "SR213",
+  "revision": "A",
+  "notes": "Zrodlo: tabela profili stanowiska Auto Branch 1 (31.08.2026). Wartosci przepisane 1:1 z tabeli. ARC Limit 0 = wylaczony, Real Current 0 = wylaczony. Czestotliwosc 60 Hz jest ustawieniem globalnym testera. Numer seryjny: 14 znakow (kolumna Barcode), wylacznie wielkie litery A-Z i cyfry 0-9. Stanowisko HI-POT 1. UWAGA - KOLIZJA KANALOW DO WYJASNIENIA: krok 'Ethernet 3' i krok 'ADSL' maja w tabeli TEN SAM kanal 6 (O,O,O,O,O,H,O,O), przy roznych napieciach 1.06 kV i 1.50 kV. Albo fixture faktycznie ma te dwa testy na jednym kanale, albo w tabeli jest blad przepisania. Potwierdzic przed wlaczeniem profilu na produkcji.",
+  "instrument": {
+    "allowed_models": [
+      "19053"
+    ],
+    "requires_scan_box": true,
+    "channel_count": 8
+  },
+  "serial": {
+    "allowed_lengths": [
+      14
+    ]
+  },
+  "test_timeout_s": 60,
+  "steps": [
+    {
+      "name": "Ethernet 1",
+      "mode": "ACW",
+      "voltage": 1060,
+      "limit_high": 1.0,
+      "limit_low": 0.035,
+      "presence_min_current": 0.035,
+      "ramp_time": 0.5,
+      "dwell": 1.0,
+      "ramp_dn": 0.5,
+      "arc_sense": 0.0,
+      "frequency": 60,
+      "continuity": "OFF",
+      "channels": "OOOHOOOO",
+      "real_limit": 0.0
+    },
+    {
+      "name": "Ethernet 2",
+      "mode": "ACW",
+      "voltage": 1060,
+      "limit_high": 1.0,
+      "limit_low": 0.035,
+      "presence_min_current": 0.035,
+      "ramp_time": 0.5,
+      "dwell": 1.0,
+      "ramp_dn": 0.5,
+      "arc_sense": 0.0,
+      "frequency": 60,
+      "continuity": "OFF",
+      "channels": "OOOOHOOO",
+      "real_limit": 0.0
+    },
+    {
+      "name": "Ethernet 3",
+      "mode": "ACW",
+      "voltage": 1060,
+      "limit_high": 1.0,
+      "limit_low": 0.035,
+      "presence_min_current": 0.035,
+      "ramp_time": 0.5,
+      "dwell": 1.0,
+      "ramp_dn": 0.5,
+      "arc_sense": 0.0,
+      "frequency": 60,
+      "continuity": "OFF",
+      "channels": "OOOOOHOO",
+      "real_limit": 0.0
+    },
+    {
+      "name": "Ethernet 4",
+      "mode": "ACW",
+      "voltage": 1060,
+      "limit_high": 1.0,
+      "limit_low": 0.035,
+      "presence_min_current": 0.035,
+      "ramp_time": 0.5,
+      "dwell": 1.0,
+      "ramp_dn": 0.5,
+      "arc_sense": 0.0,
+      "frequency": 60,
+      "continuity": "OFF",
+      "channels": "OOOOOOHO",
+      "real_limit": 0.0
+    },
+    {
+      "name": "ADSL",
+      "mode": "ACW",
+      "voltage": 1500,
+      "limit_high": 1.5,
+      "limit_low": 0.02,
+      "presence_min_current": 0.02,
+      "ramp_time": 0.5,
+      "dwell": 1.0,
+      "ramp_dn": 0.5,
+      "arc_sense": 0.0,
+      "frequency": 60,
+      "continuity": "OFF",
+      "channels": "OOOOOHOO",
+      "real_limit": 0.0
+    },
+    {
+      "name": "DSL",
+      "mode": "ACW",
+      "voltage": 1500,
+      "limit_high": 1.5,
+      "limit_low": 0.02,
+      "presence_min_current": 0.02,
+      "ramp_time": 0.5,
+      "dwell": 1.0,
+      "ramp_dn": 0.5,
+      "arc_sense": 0.0,
+      "frequency": 60,
+      "continuity": "OFF",
+      "channels": "OOHOOOOO",
+      "real_limit": 0.0
+    }
+  ]
+}

@@ -20,8 +20,10 @@
  *     Aplikacja wymaga poprawnego komunikatu co 2 s; brak = utrata interlocka
  *     i zablokowanie testu. 100 ms daje 20-krotny zapas.
  *   - zmiana stanu wysylana natychmiast, nie czeka na kolejny heartbeat
+ *   - dodatkowo raz na sekunde linia "ID:<podpis stanowiska>", ktora
+ *     aplikacja porownuje z INTERLOCK_IDENTITY w station_config.json
  *   - zadnych innych napisow, banerow ani logow - aplikacja odrzuca wszystko,
- *     co nie jest dokladnie "OPEN" albo "CLOSED"
+ *     co nie jest "OPEN", "CLOSED" ani "ID:..."
  *
  * UWAGA - biblioteka Keyboard zostala USUNIETA celowo.
  * Poprzednia wersja emulowala klawiature i wysylala Enter do komputera.
@@ -31,6 +33,17 @@
  */
 
 const uint8_t INTERLOCK_PIN = 6;
+
+// Podpis stanowiska. Aplikacja porownuje go z INTERLOCK_IDENTITY
+// w station_config.json i przerywa prace, gdy sie nie zgadza.
+// To NIE jest zabezpieczenie kryptograficzne - podpis stoi tu otwartym
+// tekstem. Wyklucza natomiast przypadkowe podlaczenie sie pod zly port COM
+// i wymaga swiadomego dzialania, zeby go podrobic.
+// Zostaw pusty ciag, jesli nie uzywasz tej kontroli.
+const char STATION_SIGNATURE[] = "HIPOT-SR203-01";
+
+// Co ile wysylac podpis.
+const uint16_t IDENTITY_MS = 1000;
 
 // Krancowka mechaniczna drga przy przelaczaniu. Stan musi byc stabilny
 // przez tyle milisekund, zanim uznamy go za nowy stan klapy.
@@ -52,6 +65,16 @@ bool candidateClosed = false;
 unsigned long lastSampleMs = 0;
 unsigned long candidateSinceMs = 0;
 unsigned long lastSendMs = 0;
+unsigned long lastIdentityMs = 0;
+
+void sendIdentity() {
+    if (STATION_SIGNATURE[0] == '\0') {
+        return;
+    }
+    Serial.print("ID:");
+    Serial.println(STATION_SIGNATURE);
+    lastIdentityMs = millis();
+}
 
 void sendState(bool closed) {
     Serial.println(closed ? "CLOSED" : "OPEN");
@@ -73,8 +96,11 @@ void setup() {
     lastSampleMs = now;
     candidateSinceMs = now;
 
+    lastIdentityMs = now;
+
     stableClosed = (digitalRead(INTERLOCK_PIN) == LOW);
     candidateClosed = stableClosed;
+    sendIdentity();
     sendState(stableClosed);
 }
 
@@ -101,5 +127,10 @@ void loop() {
     // --- heartbeat: powtorzenie stanu, gdy nic sie nie dzieje ---
     if (now - lastSendMs >= HEARTBEAT_MS) {
         sendState(stableClosed);
+    }
+
+    // --- podpis stanowiska, raz na sekunde ---
+    if (now - lastIdentityMs >= IDENTITY_MS) {
+        sendIdentity();
     }
 }

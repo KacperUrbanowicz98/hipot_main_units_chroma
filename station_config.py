@@ -7,7 +7,6 @@ import os
 APP_VERSION = "1.0.0"
 APP_NAME = "Reconext Hi-Pot Main Units"
 CONFIG_FILE = "station_config.json"
-SCHEMA_VERSION = 1
 
 
 class StationConfig:
@@ -20,9 +19,19 @@ class StationConfig:
     COLOR_BG = "#F5F5F5"
     COLOR_WHITE = "#FFFFFF"
     COLOR_PRIMARY = "#1A237E"
-    COLOR_ACCENT = "#4CAF50"
-    COLOR_ERROR = "#F44336"
-    COLOR_WARNING = "#FF9800"
+    # Kontrast wzgledem bieli / jasnego tla wg WCAG 2.1 (wymagane 4,5:1).
+    # Poprzednie wartosci nie spelnialy progu: #4CAF50 dawal 2,78:1,
+    # #F44336 3,68:1, a #FF9800 - kolor WSZYSTKICH instrukcji operacyjnych -
+    # zaledwie 1,98:1. Operator odczytywal wynik wylacznie z koloru, bo napis
+    # mial 11 pkt, a kolor byl za slaby.
+    COLOR_ACCENT = "#2E7D32"        # biel na tym tle: 5,13:1
+    COLOR_ERROR = "#C62828"         # biel na tym tle: 5,62:1
+    COLOR_WARNING = "#B45309"       # na jasnym tle: 4,61:1
+    # Stan normalny wymagajacy dzialania operatora - NIE jest awaria.
+    # Wczesniej klapa otwarta (czyli kazda wymiana sztuki) byla pokazywana
+    # tak samo jak awaria, wiec czerwien przestawala cokolwiek znaczyc.
+    COLOR_ACTION = "#0D47A1"        # biel na tym tle: 9,26:1
+    COLOR_ACTION_BG = "#E3F2FD"
 
     # --- Tester Hi-Pot -------------------------------------------------- #
     INSTRUMENT_MODEL = "19052"
@@ -39,6 +48,16 @@ class StationConfig:
     # --- Raporty -------------------------------------------------------- #
     STATION_ID = "HIPOT-01"
     LOG_DIR = r"\\IFS\hipot_logs"
+
+    # Sciezka do manifestu sum kontrolnych profili. Puste = manifest lokalny
+    # obok katalogu products (chroni przed edycja przypadkowa). Wskazanie
+    # udzialu sieciowego TYLKO DO ODCZYTU zamienia to w realna kontrole -
+    # patrz naglowek profile_integrity.py.
+    PROFILE_MANIFEST_PATH = ""
+
+    # Podpis plyty interlocka. Puste = bez sprawdzania. Wartosc musi byc
+    # taka sama jak STATION_SIGNATURE w szkicu arduino/interlock/interlock.ino.
+    INTERLOCK_IDENTITY = ""
     AUTO_SAVE_RESULTS = True
 
     # --- Dostep --------------------------------------------------------- #
@@ -55,12 +74,11 @@ class StationConfig:
     # Nadpisania skladni SCPI - patrz scpi_dialect.Dialect._apply_overrides.
     SCPI_OVERRIDES: dict = {}
 
-    def __init__(self, require_file: bool = True):
+    def __init__(self):
         self.SCPI_OVERRIDES = dict(type(self).SCPI_OVERRIDES)
         self.ADMIN_PASSWORD = None
         self.ENABLED_PRODUCTS = None
-        if require_file:
-            self._load()
+        self._load()
 
     def _load(self) -> None:
         from safety_rules import SafetyValidationError

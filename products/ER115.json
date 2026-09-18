@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "product_id": "ER115",
+  "display_name": "ER115",
+  "report_program": "ER115",
+  "revision": "A",
+  "notes": "Zrodlo: tabela profili stanowiska Auto Branch 1 (31.08.2026). Wartosci przepisane 1:1 z tabeli. ARC Limit 0 = wylaczony, Real Current 0 = wylaczony. Czestotliwosc 60 Hz jest ustawieniem globalnym testera. Numer seryjny: 14 znakow (kolumna Barcode), wylacznie wielkie litery A-Z i cyfry 0-9. Stanowisko HI-POT 2. DO POTWIERDZENIA: nazwa Test Planu w polu Program raportu (tymczasowo 'ER115') oraz model testera na HI-POT 2 (przyjeto Chroma 19053 ze scan boxem - kanaly 1,2,5).",
+  "instrument": {
+    "allowed_models": [
+      "19053"
+    ],
+    "requires_scan_box": true,
+    "channel_count": 8
+  },
+  "serial": {
+    "allowed_lengths": [
+      14
+    ]
+  },
+  "test_timeout_s": 60,
+  "steps": [
+    {
+      "name": "Ethernet 1",
+      "mode": "ACW",
+      "voltage": 1060,
+      "limit_high": 1.0,
+      "limit_low": 0.027,
+      "presence_min_current": 0.027,
+      "ramp_time": 0.5,
+      "dwell": 1.0,
+      "ramp_dn": 0.5,
+      "arc_sense": 0.0,
+      "frequency": 60,
+      "continuity": "OFF",
+      "channels": "HOOOOOOO",
+      "real_limit": 0.0
+    },
+    {
+      "name": "Ethernet 2",
+      "mode": "ACW",
+      "voltage": 1060,
+      "limit_high": 1.0,
+      "limit_low": 0.027,
+      "presence_min_current": 0.027,
+      "ramp_time": 0.5,
+      "dwell": 1.0,
+      "ramp_dn": 0.5,
+      "arc_sense": 0.0,
+      "frequency": 60,
+      "continuity": "OFF",
+      "channels": "OHOOOOOO",
+      "real_limit": 0.0
+    },
+    {
+      "name": "Modem",
+      "mode": "ACW",
+      "voltage": 1500,
+      "limit_high": 1.0,
+      "limit_low": 0.05,
+      "presence_min_current": 0.05,
+      "ramp_time": 0.5,
+      "dwell": 1.0,
+      "ramp_dn": 0.5,
+      "arc_sense": 0.0,
+      "frequency": 60,
+      "continuity": "OFF",
+      "channels": "OOOOHOOO",
+      "real_limit": 0.0
+    }
+  ]
+}

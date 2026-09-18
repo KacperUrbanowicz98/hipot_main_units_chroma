@@ -24,7 +24,12 @@ from datetime import datetime
 from tkinter import messagebox
 from typing import Any, Optional
 
-from report_writer import save_report
+from report_writer import (
+    count_pending_reports,
+    flush_pending_reports,
+    save_report,
+)
+from security import audit
 from safety_rules import (
     MIN_IN_RANGE_SAMPLES,
     PASS_MIN_RUNTIME_FRACTION,
@@ -36,25 +41,57 @@ from safety_rules import (
 class StepEvidence:
     """Dowody zebrane na zywo dla jednego kroku biezacego cyklu."""
 
+    # S3: pojedyncza probka nadmiaru NIE unieważnia wyniku. Prad ladowania
+    # pojemnosci wyrobu potrafi chwilowo przekroczyc Max Limit w chwili
+    # dojscia rampy do napiecia docelowego - Chroma to widzi i orzeka PASS,
+    # a aplikacja odrzucala poprawny wynik i blokowala stanowisko.
+    # Dopiero seria kolejnych probek oznacza rzeczywiste przekroczenie.
+    OVERCURRENT_STREAK_REQUIRED = 3
+
     __slots__ = ("max_voltage", "max_current_ma", "in_range_samples",
-                 "overcurrent_seen", "samples")
+                 "overcurrent_streak", "overcurrent_seen", "samples")
 
     def __init__(self):
-        self.max_voltage = 0.0
-        self.max_current_ma = 0.0
-        self.in_range_samples = 0
-        self.overcurrent_seen = False
-        self.samples = 0
+        self.reset()
 
     def reset(self) -> None:
         self.max_voltage = 0.0
         self.max_current_ma = 0.0
         self.in_range_samples = 0
+        self.overcurrent_streak = 0
         self.overcurrent_seen = False
         self.samples = 0
 
+    def note_overcurrent(self, over: bool) -> None:
+        if not over:
+            self.overcurrent_streak = 0
+            return
+        self.overcurrent_streak += 1
+        if self.overcurrent_streak >= self.OVERCURRENT_STREAK_REQUIRED:
+            self.overcurrent_seen = True
+
+
+class _NullWidget:
+    """Zaslepka po usunietym przycisku START TEST.
+
+    Przycisk byl ustawiany na state="disabled" w 17 miejscach i ani razu na
+    "normal" - start jest wylacznie automatyczny po zamknieciu klapy.
+    Zamiast wycinac kilkanascie wywolan po jednym (i ryzykowac przeoczenie
+    jednego), zaslepka przyjmuje je i nic nie robi.
+    """
+
+    def config(self, **_kwargs) -> None:
+        return None
+
+    def winfo_ismapped(self) -> bool:
+        return False
+
 
 class TestScreen:
+
+    # Atrybut klasy: istnieje zawsze, takze zanim powstana widgety.
+    start_button = _NullWidget()
+
 
     def __init__(self, parent, config, scan, app_ref=None):
         self.parent = parent
@@ -77,6 +114,10 @@ class TestScreen:
         self._test_aborted = False
         self._closed = False
         self._run_id = 0
+        self._last_display_refresh = 0.0
+        # Po przerwanym tescie przycisk "Nastepny SN" najpierw przygotowuje
+        # stanowisko, dopiero potem otwiera okno skanowania.
+        self._needs_recovery = False
         self._test_completed_called = False
 
         self._evidence: dict[int, StepEvidence] = {
@@ -129,11 +170,11 @@ class TestScreen:
         self._create_device_info()
         self._create_step_table()
         self._create_live_display()
+        self._create_verdict_bar()
         self._create_progress_bar()
         self._create_interlock_status()
         self._create_control_buttons()
         self._create_history_panel()
-        self._create_footer()
 
         self._connect_device()
         self._connect_interlock()
@@ -156,9 +197,9 @@ class TestScreen:
                     traceback.print_exc()
                     try:
                         if self.device:
-                            self.device.stop_test()
-                    except Exception:
-                        pass
+                            self.device.request_stop()
+                    except Exception as stop_error:
+                        print(f"[UI] STOP po bledzie callbacku: {stop_error}")
                     self._test_error(f"Wewnetrzny blad interfejsu: {exc}")
         except queue.Empty:
             pass
@@ -197,7 +238,7 @@ class TestScreen:
             self.sn_dialog = None
 
         for action in (
-            lambda: self.device and self.device.stop_test(),
+            lambda: self.device and self.device.stop_test(verify=False),
             lambda: self.interlock and self.interlock.disconnect(),
             lambda: self.device and self.device.disconnect(send_stop=False),
         ):
@@ -227,6 +268,9 @@ class TestScreen:
         tk.Label(header, text=self.config.WINDOW_TITLE,
                  bg=self.config.COLOR_PRIMARY, fg=self.config.COLOR_WHITE,
                  font=("Arial", 20, "bold")).pack(side=tk.LEFT, padx=20, pady=14)
+        tk.Label(header, text=f"Stanowisko: {self.config.STATION_ID}",
+                 bg=self.config.COLOR_PRIMARY, fg="#C5CAE9",
+                 font=("Arial", 12, "bold")).pack(side=tk.LEFT, padx=6, pady=14)
 
         border = tk.Frame(header, bg=self.config.COLOR_WHITE, padx=1, pady=1)
         border.pack(side=tk.RIGHT, padx=10, pady=14)
@@ -236,17 +280,6 @@ class TestScreen:
             font=("Arial", 10, "bold"), relief=tk.FLAT, cursor="hand2",
             padx=10, pady=4, command=self._go_back)
         self.back_button.pack()
-
-    def _create_footer(self) -> None:
-        footer = tk.Frame(self.parent, bg=self.config.COLOR_PRIMARY, height=34)
-        footer.pack(side=tk.BOTTOM, fill=tk.X)
-        footer.pack_propagate(False)
-        tk.Label(footer, text=self.config.footer_left(),
-                 bg=self.config.COLOR_PRIMARY, fg=self.config.COLOR_WHITE,
-                 font=("Arial", 10, "bold")).pack(side=tk.LEFT, padx=20, pady=8)
-        tk.Label(footer, text="Autor: Kacper Urbanowicz",
-                 bg=self.config.COLOR_PRIMARY, fg=self.config.COLOR_WHITE,
-                 font=("Arial", 10, "bold")).pack(side=tk.RIGHT, padx=20, pady=8)
 
     def _create_device_info(self) -> None:
         frame = tk.Frame(self.main_frame, bg=self.config.COLOR_WHITE,
@@ -356,13 +389,57 @@ class TestScreen:
         self.current_label.config(text="0.00 mA")
         self.time_label.config(text="0.0 s")
 
+    # Odswiezanie licznikow na ekranie (nie dotyczy zbierania probek).
+    DISPLAY_REFRESH_S = 0.2
+
+    def _create_verdict_bar(self) -> None:
+        """Wynik testu na pelna szerokosc, 64 pkt.
+
+        W3/W4 z audytu: wczesniej werdykt byl najmniejszym waznym tekstem na
+        ekranie (11 pkt), a najwieksze byly liczniki napiecia, ktore w chwili
+        odczytu wyniku pokazuja 0 V. Operator odczytywal wynik wylacznie
+        z koloru - przy kontrascie 2,78:1 dla PASS.
+        """
+        self.verdict_frame = tk.Frame(self.main_frame, bg=self.config.COLOR_BG,
+                                      height=96)
+        self.verdict_frame.pack(fill=tk.X, pady=(0, 6))
+        self.verdict_frame.pack_propagate(False)
+        self.verdict_label = tk.Label(
+            self.verdict_frame, text="GOTOWY", bg=self.config.COLOR_BG,
+            fg="#9E9E9E", font=("Arial", 64, "bold"))
+        self.verdict_label.pack(expand=True, fill=tk.BOTH)
+
+    def _set_verdict(self, text: str, color: str) -> None:
+        frame = getattr(self, "verdict_frame", None)
+        if frame is None:
+            return
+        try:
+            background = (self.config.COLOR_BG if color == "#9E9E9E" else color)
+            foreground = ("#9E9E9E" if color == "#9E9E9E"
+                          else self.config.COLOR_WHITE)
+            frame.config(bg=background)
+            self.verdict_label.config(text=text, bg=background, fg=foreground)
+        except tk.TclError:
+            pass
+
     def _create_progress_bar(self) -> None:
         frame = tk.Frame(self.main_frame, bg=self.config.COLOR_BG)
         frame.pack(fill=tk.X, pady=(0, 8))
         self.status_label = tk.Label(frame, text="Gotowy do rozpoczęcia testu",
-                                     bg=self.config.COLOR_BG, fg="#666666",
-                                     font=("Arial", 11))
+                                     bg=self.config.COLOR_BG, fg="#424242",
+                                     font=("Arial", 13, "bold"),
+                                     wraplength=1200, justify="center")
         self.status_label.pack(pady=(0, 5))
+        # W6: ostrzezenie o zbyt wolnym probkowaniu bylo pisane do
+        # status_label i kasowane w NASTEPNEJ linii - nigdy nie bylo widoczne.
+        self.sampling_warning_label = tk.Label(
+            frame, text="", bg=self.config.COLOR_BG,
+            fg=self.config.COLOR_WARNING, font=("Arial", 11, "bold"),
+            wraplength=1200, justify="center")
+        # W5: stan zapisu raportow. Pakowany dopiero, gdy jest co pokazac.
+        self.storage_warning_label = tk.Label(
+            frame, text="", bg="#FFF3E0", fg=self.config.COLOR_WARNING,
+            font=("Arial", 12, "bold"), wraplength=1200, justify="center")
         self.progress_canvas = tk.Canvas(
             frame, height=26, bg=self.config.COLOR_WHITE,
             highlightthickness=1, highlightbackground="#cccccc")
@@ -376,7 +453,7 @@ class TestScreen:
         self.interlock_frame.pack(fill=tk.X, pady=(0, 8))
         self.interlock_label = tk.Label(
             self.interlock_frame, text="⏳ Łączenie z interlockiem (Arduino)...",
-            bg="#fff8e1", fg="#FF9800", font=("Arial", 11, "bold"))
+            bg="#fff8e1", fg=self.config.COLOR_WARNING, font=("Arial", 11, "bold"))
         self.interlock_label.pack(pady=7)
 
         # Przycisk pojawia sie TYLKO po utracie sygnalu. Utrata konczy watek
@@ -393,19 +470,16 @@ class TestScreen:
         frame = tk.Frame(self.main_frame, bg=self.config.COLOR_BG)
         frame.pack(fill=tk.X, pady=(0, 8))
 
-        self.start_button = tk.Button(
-            frame, text="START TEST", bg=self.config.COLOR_ACCENT,
-            fg=self.config.COLOR_WHITE, font=("Arial", 15, "bold"), height=2,
-            relief=tk.FLAT, cursor="hand2", state="disabled",
-            command=self._start_test)
-        self.start_button.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 5))
-
+        # Przycisk "START TEST" zostal usuniety: byl ustawiany na
+        # state="disabled" w 17 miejscach i ani razu na "normal". Start jest
+        # wylacznie automatyczny po zamknieciu klapy. Przycisk, ktory nigdy
+        # nie dziala, uczy operatora ignorowac przyciski.
         self.stop_button = tk.Button(
             frame, text="STOP", bg=self.config.COLOR_ERROR,
             fg=self.config.COLOR_WHITE, font=("Arial", 15, "bold"), height=2,
             relief=tk.FLAT, cursor="hand2", state="disabled",
             command=self._stop_test)
-        self.stop_button.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=5)
+        self.stop_button.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 5))
 
         self.next_sn_button = tk.Button(
             frame, text="➜ Następny SN", bg="#607D8B",
@@ -413,6 +487,8 @@ class TestScreen:
             relief=tk.FLAT, cursor="hand2", state="disabled",
             command=self._open_sn_dialog_manually)
         self.next_sn_button.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(5, 0))
+
+
 
     def _create_history_panel(self) -> None:
         outer = tk.Frame(self.main_frame, bg=self.config.COLOR_WHITE,
@@ -477,16 +553,21 @@ class TestScreen:
             )
             self.status_label.config(
                 text=f"Łączenie z Chroma {self.config.INSTRUMENT_MODEL}...",
-                fg="#FF9800")
+                fg=self.config.COLOR_WARNING)
             if self.device.connect():
                 self._configure_device()
             else:
+                reason = (getattr(self.device, "last_connect_error", "")
+                          or f"Brak połączenia z Chroma na "
+                             f"{self.config.DEVICE_COM_PORT}")
+                self._set_verdict("BRAK TESTERA", self.config.COLOR_ERROR)
                 self.status_label.config(
-                    text=f"✗ Brak połączenia z Chroma na "
-                         f"{self.config.DEVICE_COM_PORT}",
+                    text=f"⛔ {reason}  —  zawołaj technologa",
                     fg=self.config.COLOR_ERROR)
-                self.start_button.config(state="disabled")
+                self._block_all_controls()
         except Exception as exc:
+            print(f"[TEST_SCREEN] {exc!r}")
+            traceback.print_exc()
             self.status_label.config(text=f"✗ Błąd: {exc}",
                                      fg=self.config.COLOR_ERROR)
             self.start_button.config(state="disabled")
@@ -505,6 +586,8 @@ class TestScreen:
                 fg=self.config.COLOR_ACCENT)
             self._attempt_safe_start()
         except Exception as exc:
+            print(f"[TEST_SCREEN] {exc!r}")
+            traceback.print_exc()
             self._device_configured = False
             self.status_label.config(
                 text=f"⛔ Błąd konfiguracji — test zablokowany: {exc}",
@@ -536,12 +619,18 @@ class TestScreen:
         # jedno zgubione FETCh wystarczy, zeby poprawny PASS zostal odrzucony
         # jako niepotwierdzony.
         if estimated < MIN_IN_RANGE_SAMPLES * 2:
-            self.status_label.config(
+            # WLASNA etykieta - wczesniej ostrzezenie szlo do status_label
+            # i bylo kasowane w nastepnej linii, wiec nigdy nie bylo widoczne.
+            self.sampling_warning_label.config(
                 text=f"⚠ Przy {self.config.DEVICE_BAUDRATE} bodach zdążę zebrać "
                      f"~{estimated:.0f} próbek na krok (wymagane "
                      f"{MIN_IN_RANGE_SAMPLES}, bez zapasu) — podnieś baudrate "
-                     f"w menu SYSTEM testera i w panelu Stanowisko",
-                fg=self.config.COLOR_WARNING)
+                     f"w menu SYSTEM testera i w panelu Stanowisko. "
+                     f"Poprawne sztuki mogą być odrzucane.")
+            if not self.sampling_warning_label.winfo_ismapped():
+                self.sampling_warning_label.pack(pady=(0, 4))
+        elif self.sampling_warning_label.winfo_ismapped():
+            self.sampling_warning_label.pack_forget()
 
     def _connect_interlock(self) -> None:
         if not self._interlock_enforced():
@@ -559,8 +648,12 @@ class TestScreen:
                 port=port,
                 baudrate=getattr(self.config, "INTERLOCK_BAUDRATE", 9600),
                 heartbeat_timeout=2.0,
+                expected_identity=getattr(self.config,
+                                          "INTERLOCK_IDENTITY", ""),
             )
         except Exception as exc:
+            print(f"[TEST_SCREEN] {exc!r}")
+            traceback.print_exc()
             # Kazda awaria tutaj (brak biblioteki, zly baudrate w konfiguracji)
             # musi zablokowac test z czytelnym komunikatem, a nie przewrocic
             # calego ekranu testowego.
@@ -574,7 +667,7 @@ class TestScreen:
             self.interlock.start_monitoring()
             self.interlock_label.config(
                 text="⏳ Oczekiwanie na aktualny stan klapy...",
-                fg="#FF9800", bg="#fff8e1")
+                fg=self.config.COLOR_WARNING, bg="#fff8e1")
             self.start_button.config(state="disabled")
         else:
             self._block_interlock(
@@ -626,7 +719,7 @@ class TestScreen:
                 self.interlock_retry_btn.pack_forget()
             self.interlock_label.config(
                 text="⏳ Połączono ponownie — oczekiwanie na stan klapy...",
-                fg="#FF9800", bg="#fff8e1")
+                fg=self.config.COLOR_WARNING, bg="#fff8e1")
             self.interlock_frame.config(bg="#fff8e1")
         else:
             self._block_interlock(
@@ -682,7 +775,7 @@ class TestScreen:
         if self._current_interlock_closed is not True:
             self.status_label.config(
                 text="SN zaakceptowany — zamknij klapę, aby rozpocząć test",
-                fg="#FF9800")
+                fg=self.config.COLOR_WARNING)
             return False
         if not self._valid_close_transition:
             self.status_label.config(
@@ -719,8 +812,9 @@ class TestScreen:
                 self.interlock_label.config(
                     text="🔒 Klapa ZAMKNIĘTA — przed nowym testem otwórz ją "
                          "i zamknij ponownie",
-                    fg="#FF9800", bg="#fff8e1")
-                self.interlock_frame.config(bg="#fff8e1")
+                    fg=self.config.COLOR_ACTION,
+                    bg=self.config.COLOR_ACTION_BG)
+                self.interlock_frame.config(bg=self.config.COLOR_ACTION_BG)
                 self.start_button.config(state="disabled")
                 self._prev_interlock_closed = True
                 return
@@ -744,10 +838,13 @@ class TestScreen:
         self._lid_open_seen = True
         self._valid_close_transition = False
         self._prev_interlock_closed = False
+        # Klapa otwarta to stan NORMALNY przy kazdej wymianie sztuki.
+        # Pokazywanie go czerwienia sprawialo, ze operator przestawal
+        # reagowac na czerwony - a wtedy prawdziwy FAIL tez przestawal dzialac.
         self.interlock_label.config(
             text="🔓 Klapa OTWARTA — włóż urządzenie, zeskanuj SN i zamknij klapę",
-            fg=self.config.COLOR_ERROR, bg="#ffebee")
-        self.interlock_frame.config(bg="#ffebee")
+            fg=self.config.COLOR_ACTION, bg=self.config.COLOR_ACTION_BG)
+        self.interlock_frame.config(bg=self.config.COLOR_ACTION_BG)
 
         if self.test_running:
             if self._cycle_terminal_seen:
@@ -757,7 +854,7 @@ class TestScreen:
                 self.stop_button.config(state="disabled")
                 self.status_label.config(
                     text="⏳ Test zakończony — finalizuję świeży wynik...",
-                    fg="#FF9800")
+                    fg=self.config.COLOR_WARNING)
                 return
             self._abort_running_test(
                 status="⛔ Test przerwany — klapa została otwarta!",
@@ -770,18 +867,88 @@ class TestScreen:
         else:
             self.start_button.config(state="disabled")
 
+    def _stop_device_now(self) -> None:
+        """Wysyla STOP natychmiast, potwierdzenie sprawdza w tle.
+
+        Wywolywane z watku Tk. Sam zapis STOP jest szybki (przerwanie
+        trwajacej wymiany + krotka blokada), ale POTWIERDZENIE wymaga kilku
+        zapytan do testera - gdyby szlo tu synchronicznie, zamrozilo by okno
+        na czas, ktory wlasnie probujemy skrocic.
+        """
+        if not self.device:
+            return
+        try:
+            sent, message = self.device.request_stop()
+        except Exception as exc:
+            sent, message = False, str(exc)
+            print(f"[STOP] Blad wysylki STOP: {exc}")
+            traceback.print_exc()
+        if not sent:
+            self._post_ui(lambda m=message: self._show_stop_not_confirmed(m))
+            return
+
+        def worker() -> None:
+            try:
+                confirmed, detail = self.device.confirm_stopped()
+            except Exception as exc:
+                confirmed, detail = False, str(exc)
+                print(f"[STOP] Blad weryfikacji zatrzymania: {exc}")
+                traceback.print_exc()
+            if not confirmed:
+                self._post_ui(lambda d=detail: self._show_stop_not_confirmed(d))
+            else:
+                print(f"[STOP] {detail}")
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _show_stop_not_confirmed(self, detail: str) -> None:
+        """Tester nie potwierdzil zatrzymania - operator musi zareagowac.
+
+        To nie jest komunikat informacyjny. Dopoki nie ma potwierdzenia, nie
+        wiadomo, czy na wyrobie nie ma nadal wysokiego napiecia.
+        """
+        self._block_all_controls()
+        self.status_label.config(
+            text="⛔ NIE POTWIERDZONO ZATRZYMANIA TESTERA — "
+                 "naciśnij czerwony STOP na panelu Chromy, "
+                 "nie otwieraj klapy do zgaśnięcia HV",
+            fg=self.config.COLOR_ERROR)
+        self._set_verdict("BRAK POTWIERDZENIA STOP", self.config.COLOR_ERROR)
+        print(f"[STOP] BRAK POTWIERDZENIA: {detail}")
+        messagebox.showerror(
+            "Nie potwierdzono zatrzymania testera",
+            "Aplikacja wysłała STOP, ale tester tego nie potwierdził.\n\n"
+            f"Szczegóły: {detail}\n\n"
+            "1. Naciśnij czerwony przycisk STOP na panelu Chromy.\n"
+            "2. Odczekaj do zgaśnięcia wskaźnika wysokiego napięcia.\n"
+            "3. Dopiero wtedy otwórz klapę.\n"
+            "4. Zawołaj technologa — stanowisko wymaga sprawdzenia.",
+            parent=self.parent)
+
+    def _block_all_controls(self) -> None:
+        for name in ("start_button", "stop_button", "next_sn_button"):
+            widget = getattr(self, name, None)
+            if widget is not None:
+                try:
+                    widget.config(state="disabled")
+                except tk.TclError:
+                    pass
+
     def _abort_running_test(self, *, status: str, title: str, message: str,
                             icon: str) -> None:
+        was_running = self.test_running
         self._test_aborted = True
         self.test_running = False
         self._device_configured = False
         self._serial_ready_for_test = False
-        if self.device:
-            self.device.stop_test()
-        self.start_button.config(state="disabled")
+        self._stop_device_now()
+        if was_running:
+            self._record_incomplete_run("PRZERWANY", title)
+            self._set_verdict("PRZERWANY", self.config.COLOR_WARNING)
         self.stop_button.config(state="disabled")
         self.back_button.config(state="normal")
         self.status_label.config(text=status, fg=self.config.COLOR_ERROR)
+        self._offer_recovery()
         show = messagebox.showerror if icon == "error" else messagebox.showwarning
         show(title, message, parent=self.parent)
 
@@ -817,6 +984,7 @@ class TestScreen:
         self._reset_cycle_state()
         self._run_id += 1
         run_id = self._run_id
+        self._last_display_refresh = 0.0
         self.test_running = True
         self.start_time = time.monotonic()
 
@@ -826,7 +994,7 @@ class TestScreen:
         self.back_button.config(state="disabled")
         self.next_sn_button.config(state="disabled")
         self.status_label.config(text="🔄 Uruchamianie nowego cyklu Hi-Pot...",
-                                 fg="#FF9800")
+                                 fg=self.config.COLOR_WARNING)
         self._reset_step_rows()
 
         self.test_thread = threading.Thread(
@@ -855,7 +1023,6 @@ class TestScreen:
                     "Chroma nie potwierdziła rozpoczęcia NOWEGO cyklu testowego. "
                     "Wynik z poprzedniej sztuki nie został użyty."
                 )
-            self._cycle_active_seen = True
 
             steps = self.profile.steps
             total_time = self.profile.total_duration
@@ -867,9 +1034,24 @@ class TestScreen:
             terminal_status = None
             elapsed = 0.0
 
+            # K6: okno mierzone bramkami czasu musi zaczynac sie od zapisu
+            # SAFEty:STARt, a nie od momentu utworzenia watku. Cala sekwencja
+            # startowa (STOP, SYST:ERR?, pomiar bazowy, ponowienia) potrafi
+            # zajac kilkanascie sekund przy chwiejnym RS232. Liczona od
+            # start_time bramka minimum_runtime przepuszczala wtedy cykl
+            # trwajacy 1 s jako PASS, a max_runtime odrzucalo cykl poprawny.
+            print(f"[TEST] Start cyklu | S/N {self.serial} | "
+                  f"profil {self.profile.product_id}")
+            cycle_started = self.device.cycle_started_monotonic()
+            if cycle_started is None:
+                raise RuntimeError(
+                    "Brak znacznika czasu rozpoczecia cyklu w testerze")
+            self.start_time = cycle_started
+
             while (self.test_running and not self._test_aborted
                    and not self._closed and run_id == self._run_id):
-                elapsed = time.monotonic() - self.start_time
+                now = time.monotonic()
+                elapsed = now - cycle_started
                 status = self.device.get_status()
 
                 if status == "COMM_ERROR":
@@ -881,6 +1063,10 @@ class TestScreen:
                     continue
                 consecutive_comm_errors = 0
                 if status in ("TESTING", "RUNNING"):
+                    # Ustawiane WYLACZNIE z obserwacji stanu testera.
+                    # Wczesniej flaga byla ustawiana bezwarunkowo zaraz po
+                    # start_test(), wiec warunek nizej nigdy nie byl prawdziwy
+                    # i bramka byla atrapa.
                     self._cycle_active_seen = True
 
                 measurements = self.device.read_measurements()
@@ -888,7 +1074,13 @@ class TestScreen:
                     self._record_sample(measurements, steps)
 
                 self.elapsed_time = elapsed
-                self._post_ui(self._update_display)
+                # Zbieranie probek zostaje bez zmian - od niego zaleza dowody.
+                # Odswiezanie EKRANU dlawimy do ~5 Hz: przy petli co 20 ms
+                # najwieksze liczby na ekranie migotaly 20-40 razy na sekunde
+                # i byly nieczytelne.
+                if now - self._last_display_refresh >= self.DISPLAY_REFRESH_S:
+                    self._last_display_refresh = now
+                    self._post_ui(self._update_display)
 
                 if status in ("STOPPED", "STOP", "PASS", "FAIL"):
                     terminal_status = status
@@ -921,6 +1113,9 @@ class TestScreen:
                 )
             if not data.get("fresh_cycle"):
                 raise RuntimeError("Wynik nie został przypisany do bieżącego cyklu")
+            # ``elapsed`` jest liczone od znacznika ZAPISU SAFEty:STARt
+            # (patrz K6 wyzej), wiec mierzy okno samego cyklu, bez narzutu
+            # sekwencji startowej.
             if result == "PASS" and elapsed < minimum_runtime:
                 raise RuntimeError(
                     f"PASS pojawił się zbyt szybko ({elapsed:.1f} s; "
@@ -933,12 +1128,18 @@ class TestScreen:
             self._post_ui(lambda r=result, d=data: self._test_completed(r, d))
 
         except Exception as exc:
+            print(f"[TEST_SCREEN] {exc!r}")
+            traceback.print_exc()
             if self._test_aborted or self._closed or run_id != self._run_id:
                 return
             try:
-                self.device.stop_test()
-            except Exception:
-                pass
+                confirmed, detail = self.device.stop_test()
+                if not confirmed:
+                    self._post_ui(
+                        lambda d=detail: self._show_stop_not_confirmed(d))
+            except Exception as stop_error:
+                print(f"[STOP] Blad zatrzymania po wyjatku: {stop_error}")
+                traceback.print_exc()
             self._post_ui(lambda message=str(exc): self._test_error(message))
 
     def _record_sample(self, measurements: dict, steps) -> None:
@@ -973,8 +1174,11 @@ class TestScreen:
         if voltage >= target_voltage * 0.90:
             if effective_low <= current_ma <= high_limit:
                 evidence.in_range_samples += 1
-            elif current_ma > high_limit:
-                evidence.overcurrent_seen = True
+            evidence.note_overcurrent(current_ma > high_limit)
+        else:
+            # Ponizej 90% napiecia docelowego trwa rampa - tam nadmiar
+            # nie znaczy nic. Seria musi zaczac sie od nowa.
+            evidence.note_overcurrent(False)
 
     def _validate_evidence(self, result: str, terminal_status: Optional[str],
                            data: dict) -> None:
@@ -1065,27 +1269,30 @@ class TestScreen:
             self._prev_interlock_closed = False
 
         self.test_result = result
+        print(f"[TEST] Wynik {result} | S/N {self.serial} | "
+              f"profil {self.profile.product_id}")
         step_results = data.get("steps", [])
         self._apply_step_results(step_results)
 
-        self.start_button.config(state="disabled")
+        self._needs_recovery = False
         self.stop_button.config(state="disabled")
         self.back_button.config(state="normal")
-        self.next_sn_button.config(state="normal")
+        self.next_sn_button.config(state="normal", text="➜ Następny SN",
+                                   bg="#607D8B")
 
         failed_step = data.get("failed_step", "")
-        instruction = ("zeskanuj następny SN i zamknij klapę"
-                       if self._current_interlock_closed is False
-                       else "otwórz klapę")
+        # W4: operator ma wiedziec TYLKO czy PASS czy FAIL - to wystarczy,
+        # zeby wiedziec, co zrobic ze sztuka. Ktory krok oblal jest w tabeli
+        # kroków i w raporcie, dla technologa.
         if result == "PASS":
+            self._set_verdict("PASS", self.config.COLOR_ACCENT)
             self.status_label.config(
-                text=f"✓ TEST ZALICZONY (PASS) — wszystkie "
-                     f"{self.profile.step_count} kroków — {instruction}",
+                text="Wyrób dobry — odłóż na OK i weź następny",
                 fg=self.config.COLOR_ACCENT)
         else:
-            detail = f" — oblał krok: {failed_step}" if failed_step else ""
+            self._set_verdict("FAIL", self.config.COLOR_ERROR)
             self.status_label.config(
-                text=f"✗ TEST NIEZALICZONY (FAIL){detail} — {instruction}",
+                text="Wyrób wadliwy — odłóż na NOK",
                 fg=self.config.COLOR_ERROR)
 
         if getattr(self.config, "AUTO_SAVE_RESULTS", True):
@@ -1102,14 +1309,15 @@ class TestScreen:
         self._refresh_history()
 
         if self._interlock_enforced():
+            # Stan normalny wymagajacy dzialania - kolor akcji, nie awarii.
             if self._current_interlock_closed is False:
                 text = "🔓 Test zakończony — zeskanuj następny SN i zamknij klapę"
-                fg, bg = self.config.COLOR_ERROR, "#ffebee"
             else:
                 text = "🔒 Test zakończony — otwórz klapę przed następnym testem"
-                fg, bg = "#FF9800", "#fff8e1"
-            self.interlock_label.config(text=text, fg=fg, bg=bg)
-            self.interlock_frame.config(bg=bg)
+            self.interlock_label.config(text=text,
+                                        fg=self.config.COLOR_ACTION,
+                                        bg=self.config.COLOR_ACTION_BG)
+            self.interlock_frame.config(bg=self.config.COLOR_ACTION_BG)
 
         self._next_dialog_after_id = self.parent.after(
             300, lambda: None if self._closed else self._show_next_sn_dialog(result))
@@ -1135,14 +1343,119 @@ class TestScreen:
         thread.start()
 
     def _save_report_background(self, report_args: dict) -> None:
+        log_dir = report_args["log_dir"]
         try:
-            save_report(**report_args)
+            result = save_report(**report_args)
         except Exception as exc:
             print(f"[LOG] Błąd zapisu raportu: {exc}")
-            self._post_ui(lambda error=str(exc): messagebox.showerror(
-                "Błąd zapisu raportu",
-                f"Nie udało się zapisać raportu ani kopii awaryjnej:\n{error}",
-                parent=self.parent))
+            traceback.print_exc()
+            self._post_ui(lambda error=str(exc): self._report_write_failed(error))
+            return
+
+        fallback = bool(getattr(result, "fallback_used", False))
+        reason = str(getattr(result, "reason", ""))
+        if not fallback:
+            # Udzial znowu odpowiada - dosylamy to, co zostalo lokalnie.
+            try:
+                sent, remaining, error = flush_pending_reports(log_dir)
+            except Exception as exc:
+                sent, remaining, error = 0, count_pending_reports(), str(exc)
+                print(f"[LOG] Blad dosylki raportow: {exc}")
+        else:
+            sent, remaining, error = 0, count_pending_reports(), reason
+
+        self._post_ui(lambda f=fallback, r=remaining, e=error, s=sent:
+                      self._update_storage_state(f, r, e, s))
+
+    def _report_write_failed(self, error: str) -> None:
+        self.storage_warning_label.config(
+            text="⛔ NIE ZAPISANO RAPORTU — ani na serwerze, ani lokalnie. "
+                 "Zawołaj technologa.",
+            fg=self.config.COLOR_ERROR, bg="#FFEBEE")
+        if not self.storage_warning_label.winfo_ismapped():
+            self.storage_warning_label.pack(fill=tk.X, pady=(2, 4))
+        messagebox.showerror(
+            "Błąd zapisu raportu",
+            f"Nie udało się zapisać raportu ani kopii awaryjnej:\n{error}\n\n"
+            "Zawołaj technologa — wyniki nie są zapisywane.",
+            parent=self.parent)
+
+    def _update_storage_state(self, fallback: bool, remaining: int,
+                              error: str, sent: int = 0) -> None:
+        """W5: stan zapisu raportow musi byc WIDOCZNY.
+
+        Wczesniej zapis do katalogu awaryjnego zostawial slad wylacznie
+        w konsoli, ktorej w buildzie --windowed nikt nie widzi. Awaria
+        udzialu na jedna zmiane = kilkaset raportow lokalnie i nikt sie
+        o tym nie dowiadywal.
+        """
+        label = getattr(self, "storage_warning_label", None)
+        if label is None:
+            return
+        if sent:
+            print(f"[LOG] Doslano {sent} zaleglych raportow")
+        if fallback or remaining:
+            detail = f" ({error})" if error else ""
+            label.config(
+                text=f"⚠ Raporty zapisują się LOKALNIE, nie na serwerze"
+                     f"{detail}. Czeka na wysyłkę: {remaining}. "
+                     f"Zawołaj technologa.",
+                fg=self.config.COLOR_WARNING, bg="#FFF3E0")
+            if not label.winfo_ismapped():
+                label.pack(fill=tk.X, pady=(2, 4))
+        elif label.winfo_ismapped():
+            label.pack_forget()
+
+    def _record_incomplete_run(self, kind: str, detail: str) -> None:
+        """Rejestruje przebieg, ktory NIE dal wyniku.
+
+        Swiadomie NIE zapisujemy pliku raportu na udziale: raporty sa
+        zaciagane przez webservice do bazy jako wyniki testu, a przebieg
+        przerwany albo odrzucony wynikiem nie jest - wpis oznaczylby dobra
+        sztuke jako zla. Slad idzie tam, gdzie jego miejsce: do dziennika
+        audytowego, do logu sesji i na ekran operatora.
+        """
+        serial = self.serial or "?"
+        print(f"[PRZEBIEG] {kind} | S/N {serial} | {detail}")
+        try:
+            audit(f"TEST/{kind}",
+                  f"S/N {serial}, profil {self.profile.product_id}: {detail}")
+        except Exception as exc:
+            print(f"[PRZEBIEG] Nie zapisano do dziennika: {exc}")
+
+        self._recent_results.append({
+            "time": datetime.now().strftime("%H:%M:%S"),
+            "serial": serial,
+            "model": self.model_name,
+            "result": "—",
+            "note": kind,
+        })
+        self._recent_results = self._recent_results[-5:]
+        try:
+            self._refresh_history()
+        except Exception:
+            pass
+
+    def _classify_error(self, message: str) -> tuple[str, str]:
+        """Rozdziela "test niewazny" od "awaria sprzetu".
+
+        Odrzucenie PASS-a przez warstwe dowodowa to NIE awaria - test jest
+        niewazny i sztuke trzeba przetestowac ponownie. Wczesniej operator
+        dostawal w obu przypadkach ten sam komunikat jezykiem konstruktora
+        i to samo zablokowane stanowisko.
+        """
+        lowered = message.lower()
+        invalid_markers = ("odrzucono pass", "zbyt szybko", "dowod",
+                           "pomiarow obciazenia", "pomiarów obciążenia",
+                           "swiezego wyniku", "świeżego wyniku",
+                           "biezacego cyklu", "bieżącego cyklu")
+        if any(marker in lowered for marker in invalid_markers):
+            return ("TEST_NIEWAZNY",
+                    "Test nieważny — powtórz test tej samej sztuki.\n"
+                    "Jeśli powtórzy się drugi raz, zawołaj technologa.")
+        return ("AWARIA",
+                "Awaria stanowiska — zawołaj technologa.\n"
+                "Nie testuj dalej na tym stanowisku.")
 
     def _test_error(self, message: str) -> None:
         if self._closed:
@@ -1162,18 +1475,29 @@ class TestScreen:
             except Exception:
                 pass
 
-        self.start_button.config(state="disabled")
-        self.stop_button.config(state="disabled")
+        kind, instruction = self._classify_error(message)
+        self._record_incomplete_run(kind, message)
+
+        self._block_all_controls()
         self.back_button.config(state="normal")
-        self.next_sn_button.config(state="disabled")
-        self.status_label.config(
-            text=f"⛔ Błąd testu — dalsze testy zablokowane: {message}",
-            fg=self.config.COLOR_ERROR)
-        messagebox.showerror(
-            "Błąd testu Hi-Pot",
-            f"{message}\n\nDalsze testy zostały zablokowane. "
-            "Wróć do menu i połącz urządzenie ponownie.",
-            parent=self.parent)
+        if kind == "TEST_NIEWAZNY":
+            self._set_verdict("BRAK WYNIKU", self.config.COLOR_WARNING)
+            self.status_label.config(
+                text="Test nieważny — powtórz test tej samej sztuki",
+                fg=self.config.COLOR_WARNING)
+            messagebox.showwarning(
+                "Test nieważny",
+                f"{instruction}\n\nSzczegóły dla technologa:\n{message}",
+                parent=self.parent)
+        else:
+            self._set_verdict("AWARIA", self.config.COLOR_ERROR)
+            self.status_label.config(
+                text="Awaria stanowiska — zawołaj technologa",
+                fg=self.config.COLOR_ERROR)
+            messagebox.showerror(
+                "Awaria stanowiska",
+                f"{instruction}\n\nSzczegóły dla technologa:\n{message}",
+                parent=self.parent)
 
     def _stop_test(self) -> None:
         if self._closed:
@@ -1181,7 +1505,7 @@ class TestScreen:
         if self._result_pending:
             self.status_label.config(
                 text="⏳ Wynik jest finalizowany — STOP nie jest już wymagany",
-                fg="#FF9800")
+                fg=self.config.COLOR_WARNING)
             return
         self._test_aborted = True
         self.test_running = False
@@ -1189,15 +1513,15 @@ class TestScreen:
         self._serial_ready_for_test = False
         self._valid_close_transition = False
         self._cycle_terminal_seen = False
-        if self.device:
-            self.device.stop_test()
-        self.start_button.config(state="disabled")
-        self.stop_button.config(state="disabled")
+        self._stop_device_now()
+        self._record_incomplete_run("PRZERWANY", "STOP nacisniety przez operatora")
+        self._block_all_controls()
         self.back_button.config(state="normal")
-        self.next_sn_button.config(state="disabled")
+        self._set_verdict("PRZERWANY", self.config.COLOR_WARNING)
         self.status_label.config(
-            text="⚠ Test przerwany przez użytkownika — wymagany nowy cykl",
-            fg="#FF9800")
+            text="Test przerwany — powtórz test tej samej sztuki",
+            fg=self.config.COLOR_WARNING)
+        self._offer_recovery()
 
     # ------------------------------------------------------------------ #
     # NASTEPNY SN
@@ -1215,12 +1539,105 @@ class TestScreen:
         if self.app_ref:
             self.app_ref.show_scan_screen()
 
+    def _offer_recovery(self) -> None:
+        """Po przerwanym tescie daje droge powrotu BEZ wyjscia do menu.
+
+        Przerwanie (otwarta klapa albo STOP) zerowalo ``_device_configured``
+        i zostawialo operatorowi wylacznie "Powrot do menu" - czyli
+        rozlaczenie testera, przebudowe ekranu i pelna procedure polaczenia
+        od nowa. Przy przypadkowym otwarciu klapy to nieproporcjonalna kara.
+        Tester jest nadal polaczony, wiec wystarczy przeprogramowac kroki.
+        """
+        if self._closed or not self.device or not self.device.connected:
+            return
+        self._needs_recovery = True
+        try:
+            self.next_sn_button.config(state="normal",
+                                       text="➜ Przygotuj kolejną sztukę",
+                                       bg=self.config.COLOR_ACCENT)
+        except tk.TclError:
+            pass
+
     def _open_sn_dialog_manually(self) -> None:
+        if self._needs_recovery:
+            self._recover_for_next_unit()
+            return
         if self.sn_dialog is not None and self.sn_dialog.winfo_exists():
             self.sn_dialog.lift()
             self.sn_dialog.focus()
             return
         self._show_next_sn_dialog(self.test_result or "BRAK")
+
+    def _recover_for_next_unit(self) -> None:
+        """Przeprogramowuje kroki w testerze i wraca do skanowania S/N.
+
+        Programowanie idzie w TLE - przy 9600 bodach pieciokrokowy profil
+        z odczytem zwrotnym zajmuje kilkanascie sekund, a robione na watku
+        Tk zamrazalo by okno na caly ten czas.
+        """
+        if self._closed or self.test_running or not self.device:
+            return
+        self._needs_recovery = False
+        self._block_all_controls()
+        self.back_button.config(state="normal")
+        self._set_verdict("PRZYGOTOWANIE", "#9E9E9E")
+        self.status_label.config(
+            text="Przygotowuję stanowisko do kolejnej sztuki — chwilę...",
+            fg=self.config.COLOR_ACTION)
+        try:
+            if self.parent is not None:
+                self.parent.update_idletasks()
+        except tk.TclError:
+            pass
+
+        def worker() -> None:
+            try:
+                self.device.clear_steps()
+                self.device.configure_profile(self.profile)
+            except Exception as exc:
+                print(f"[TEST_SCREEN] Nieudane przygotowanie: {exc!r}")
+                traceback.print_exc()
+                self._post_ui(lambda e=str(exc): self._recovery_failed(e))
+            else:
+                self._post_ui(self._recovery_done)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _recovery_done(self) -> None:
+        if self._closed:
+            return
+        self._device_configured = True
+        self._serial_ready_for_test = False
+        # Swieze przejscie OPEN -> CLOSED jest nadal wymagane - przerwanie
+        # niczego tu nie skraca.
+        self._valid_close_transition = False
+        self._reset_cycle_state()
+        self._reset_step_rows()
+        self._set_verdict("GOTOWY", "#9E9E9E")
+        self._warn_if_sampling_too_slow()
+        self.next_sn_button.config(state="normal", text="➜ Następny SN",
+                                   bg="#607D8B")
+        self.status_label.config(
+            text="Stanowisko gotowe — zeskanuj numer seryjny",
+            fg=self.config.COLOR_ACTION)
+        self._show_next_sn_dialog(self.test_result or "BRAK")
+
+    def _recovery_failed(self, error: str) -> None:
+        if self._closed:
+            return
+        self._device_configured = False
+        self._set_verdict("AWARIA", self.config.COLOR_ERROR)
+        self.status_label.config(
+            text="Nie udało się przygotować stanowiska — wróć do menu "
+                 "i połącz ponownie",
+            fg=self.config.COLOR_ERROR)
+        self._block_all_controls()
+        self.back_button.config(state="normal")
+        messagebox.showerror(
+            "Nie przygotowano stanowiska",
+            f"Nie udało się zaprogramować testera.\n\nSzczegóły dla "
+            f"technologa:\n{error}",
+            parent=self.parent)
 
     def _show_next_sn_dialog(self, result: str) -> None:
         if self.sn_dialog is not None and self.sn_dialog.winfo_exists():
@@ -1229,61 +1646,86 @@ class TestScreen:
             return
 
         dialog = tk.Toplevel(self.parent)
-        dialog.title("Następny numer seryjny")
-        dialog.geometry("470x270")
+        dialog.title("Wynik testu")
+        dialog.geometry("560x420")
         dialog.configure(bg=self.config.COLOR_WHITE)
         dialog.transient(self.parent)
         dialog.grab_set()
         dialog.resizable(False, False)
         dialog.protocol("WM_DELETE_WINDOW", self._back_from_dialog)
         dialog.update_idletasks()
-        x = self.parent.winfo_screenwidth() // 2 - 235
-        y = self.parent.winfo_screenheight() // 2 - 135
+        x = self.parent.winfo_screenwidth() // 2 - 280
+        y = self.parent.winfo_screenheight() // 2 - 210
         dialog.geometry(f"+{x}+{y}")
         self.sn_dialog = dialog
 
-        color = (self.config.COLOR_ACCENT if result == "PASS"
-                 else self.config.COLOR_ERROR)
+        # W4: "Ostatni wynik" mylilo - brzmialo jak wynik POPRZEDNIEJ sztuki.
+        # Teraz sam "Wynik", pelna szerokoscia i na kolorowym tle, zeby
+        # operator wiedzial tylko jedno: co zrobic z ta sztuka.
+        self.sn_result_frame = tk.Frame(dialog, bg=self.config.COLOR_ACCENT)
+        self.sn_result_frame.pack(fill=tk.X)
+        tk.Label(self.sn_result_frame, text="WYNIK",
+                 bg=self.config.COLOR_ACCENT, fg=self.config.COLOR_WHITE,
+                 font=("Arial", 11, "bold")).pack(pady=(10, 0))
         self.sn_result_label = tk.Label(
-            dialog, text=f"Ostatni wynik: {result}", bg=self.config.COLOR_WHITE,
-            fg=color, font=("Arial", 13, "bold"))
-        self.sn_result_label.pack(pady=(15, 5))
+            self.sn_result_frame, text=result, bg=self.config.COLOR_ACCENT,
+            fg=self.config.COLOR_WHITE, font=("Arial", 46, "bold"))
+        self.sn_result_label.pack(pady=(0, 2))
+        self.sn_action_label = tk.Label(
+            self.sn_result_frame, text="", bg=self.config.COLOR_ACCENT,
+            fg=self.config.COLOR_WHITE, font=("Arial", 15, "bold"))
+        self.sn_action_label.pack(pady=(0, 12))
 
-        tk.Frame(dialog, bg="#cccccc", height=1).pack(fill=tk.X, padx=20,
-                                                      pady=(0, 12))
+        self.sn_serial_label = tk.Label(
+            dialog, text="", bg=self.config.COLOR_WHITE, fg="#555555",
+            font=("Consolas", 12))
+        self.sn_serial_label.pack(pady=(10, 0))
+
         tk.Label(dialog, text="Zeskanuj kolejny numer seryjny:",
                  bg=self.config.COLOR_WHITE, fg="#333333",
-                 font=("Arial", 11, "bold")).pack(pady=(0, 5))
+                 font=("Arial", 12, "bold")).pack(pady=(10, 5))
 
-        self.sn_entry = tk.Entry(dialog, font=("Arial", 14, "bold"), width=28,
+        self.sn_entry = tk.Entry(dialog, font=("Consolas", 18, "bold"), width=20,
                                  justify="center", relief=tk.SOLID, borderwidth=2)
-        self.sn_entry.pack(pady=5, padx=30)
-        self.sn_entry.focus()
+        self.sn_entry.pack(pady=5, padx=30, ipady=4)
+        self.sn_entry.focus_set()
         self.sn_entry.bind("<Return>", lambda event: self._confirm_next_sn())
 
         self.sn_status_lbl = tk.Label(
             dialog, text=self._sn_instruction(), bg=self.config.COLOR_WHITE,
-            fg="#888888", font=("Arial", 9))
-        self.sn_status_lbl.pack()
+            fg="#555555", font=("Arial", 10))
+        self.sn_status_lbl.pack(pady=(2, 0))
 
         tk.Button(dialog, text="Powrót do menu", bg=self.config.COLOR_PRIMARY,
                   fg=self.config.COLOR_WHITE, font=("Arial", 11, "bold"),
                   width=18, relief=tk.FLAT, cursor="hand2",
                   command=self._back_from_dialog).pack(pady=12)
+        self._paint_sn_dialog(result)
 
     def _sn_instruction(self) -> str:
         return ("Otwórz klapę, wymień urządzenie, zeskanuj SN i zamknij klapę"
                 if self._current_interlock_closed is True
                 else "Zeskanuj SN i zamknij klapę, aby rozpocząć test")
 
+    def _paint_sn_dialog(self, result: str) -> None:
+        passed = result == "PASS"
+        color = self.config.COLOR_ACCENT if passed else self.config.COLOR_ERROR
+        action = ("Odłóż na OK" if passed else "Odłóż na NOK")
+        for widget in (self.sn_result_frame, self.sn_result_label,
+                       self.sn_action_label):
+            widget.config(bg=color)
+        for widget in self.sn_result_frame.winfo_children():
+            widget.config(bg=color)
+        self.sn_result_label.config(text=result)
+        self.sn_action_label.config(text=action)
+        self.sn_serial_label.config(text=f"S/N: {self.serial}")
+
     def _update_sn_dialog(self, result: str) -> None:
-        color = (self.config.COLOR_ACCENT if result == "PASS"
-                 else self.config.COLOR_ERROR)
-        self.sn_result_label.config(text=f"Ostatni wynik: {result}", fg=color)
+        self._paint_sn_dialog(result)
         self.sn_entry.config(state="normal")
         self.sn_entry.delete(0, tk.END)
-        self.sn_status_lbl.config(text=self._sn_instruction(), fg="#888888")
-        self.sn_entry.focus()
+        self.sn_status_lbl.config(text=self._sn_instruction(), fg="#555555")
+        self.sn_entry.focus_set()
 
     def _resolve_serial(self, raw: str):
         """Rozpoznanie S/N wedlug regul profilu, na ktorym pracuje stanowisko.
@@ -1292,12 +1734,14 @@ class TestScreen:
         NIE moze miec wlasnej logiki, bo wtedy rozjezdza sie z ekranem
         startowym przy kazdej zmianie regul identyfikacji.
         """
-        from hwid_map import resolve_for_profile
+        from product_profile import resolve_serial
 
         try:
-            return resolve_for_profile(self.profile, raw)
+            return resolve_serial(self.profile, raw)
         except Exception as exc:
-            return False, f"Nie udało się rozpoznać S/N: {exc}"
+            print(f"[TEST_SCREEN] {exc!r}")
+            traceback.print_exc()
+            return False, f"Nie udało się sprawdzić S/N: {exc}"
 
     def _try_auto_confirm_sn(self) -> bool:
         valid, outcome = self._resolve_serial(self.sn_entry.get())
@@ -1325,14 +1769,15 @@ class TestScreen:
         self._attempt_safe_start()
 
     def _accept_scan(self, scan) -> bool:
-        """Zmiana produktu wymaga przekonfigurowania Chromy, nie tylko SN."""
-        if scan.product_id != self.profile.product_id:
-            self.sn_status_lbl.config(
-                text=f"✗ To jest {scan.profile.display_name}, a stanowisko jest "
-                     f"skonfigurowane pod {self.profile.display_name}. "
-                     "Wróć do menu, aby przełączyć profil.",
-                fg=self.config.COLOR_ERROR)
-            return False
+        """Przyjmuje kolejny numer seryjny w ramach tego samego profilu.
+
+        Porownanie identyfikatora produktu ze skanu z profilem ekranu
+        zostalo usuniete jako martwe: po zlikwidowaniu mapy HWID numer nie
+        niesie informacji o produkcie, wiec ``resolve_serial`` z definicji
+        zwraca profil, na ktorym pracuje stanowisko. Warunek nie mogl byc
+        prawdziwy, a przy czytaniu kodu sugerowal zabezpieczenie, ktorego
+        nie ma. Zmiana profilu wymaga powrotu do menu - i tak jest.
+        """
         self._apply_new_serial(scan)
         return True
 
@@ -1346,6 +1791,7 @@ class TestScreen:
             self.sn_dialog = None
 
     def _apply_new_serial(self, scan) -> None:
+        self._needs_recovery = False
         self.serial = scan.serial
         self.model_name = scan.model_name
         self._reset_cycle_state()
@@ -1373,7 +1819,7 @@ class TestScreen:
             message = "SN zaakceptowany — zamknij klapę po włożeniu urządzenia"
         else:
             message = "SN zaakceptowany — gotowy do uruchomienia"
-        self.status_label.config(text=message, fg="#FF9800")
+        self.status_label.config(text=message, fg=self.config.COLOR_WARNING)
 
     def _back_from_dialog(self) -> None:
         self._close_sn_dialog()

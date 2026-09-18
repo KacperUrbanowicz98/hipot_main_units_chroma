@@ -1,7 +1,7 @@
 """Punkt wejscia silnika Hi-Pot Reconext.
 
 Aplikacja celowo NIE uruchamia sie z ustawieniami domyslnymi. Brak
-``station_config.json``, ``hwid_map.json`` albo poprawnego profilu produktu
+``station_config.json`` albo poprawnego profilu produktu
 konczy sie czytelnym bledem startowym - lepiej nie wystartowac niz wykonac test
 na przypadkowym porcie albo z niezweryfikowanym profilem.
 """

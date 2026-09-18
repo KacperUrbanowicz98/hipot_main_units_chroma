@@ -75,6 +75,70 @@ def get_fallback_log_dir() -> str:
     return os.path.join(_application_dir(), _FALLBACK_DIR)
 
 
+def count_pending_reports() -> int:
+    """Ile raportow czeka lokalnie, bo udzial byl niedostepny."""
+    folder = get_fallback_log_dir()
+    try:
+        return len([name for name in os.listdir(folder)
+                    if name.lower().endswith(".txt")])
+    except OSError:
+        return 0
+
+
+def flush_pending_reports(log_dir: str) -> tuple[int, int, str]:
+    """Dosyla raporty z katalogu awaryjnego na docelowy udzial.
+
+    Bez tego ``logs_pending`` byl slepa uliczka: awaria udzialu na jedna
+    zmiane zostawiala kilkaset raportow lokalnie, a system nadrzedny nie
+    widzial ich nigdy - nic w calej aplikacji tego katalogu nie czytalo.
+
+    Zwraca ``(dosylane, pozostale, komunikat_bledu)``.
+    """
+    folder = get_fallback_log_dir()
+    try:
+        names = sorted(name for name in os.listdir(folder)
+                       if name.lower().endswith(".txt"))
+    except OSError:
+        return 0, 0, ""
+    if not names:
+        return 0, 0, ""
+
+    sent = 0
+    last_error = ""
+    for name in names:
+        source = os.path.join(folder, name)
+        try:
+            with open(source, "r", encoding="utf-8", newline="") as handle:
+                content = handle.read()
+            _write_raw(log_dir, name, content)
+            os.remove(source)
+            sent += 1
+        except OSError as exc:
+            last_error = str(exc)
+            break
+    remaining = count_pending_reports()
+    if sent:
+        print(f"[LOG] Doslano {sent} raportow z katalogu awaryjnego")
+    return sent, remaining, last_error
+
+
+class ReportSaveResult:
+    """Wynik zapisu raportu: gdzie trafil i czy udzial byl dostepny."""
+
+    __slots__ = ("path", "fallback_used", "reason")
+
+    def __init__(self, path: str, fallback_used: bool, reason: str):
+        self.path = path
+        self.fallback_used = fallback_used
+        self.reason = reason
+
+    def __fspath__(self) -> str:
+        return self.path
+
+    def __str__(self) -> str:
+        return self.path
+
+
 def _cap(result: Any) -> str:
     return "Pass" if str(result).upper() == "PASS" else "Fail"
 
@@ -143,6 +207,11 @@ def build_report_lines(*, instrument_model: str, program: str, serial: str,
 
 
 def _write_report(directory: str, filename: str, lines: Sequence[str]) -> str:
+    return _write_raw(directory, filename, "\r\n".join(lines))
+
+
+def _write_raw(directory: str, filename: str, content: str) -> str:
+    """Zapis atomowy: watcher nigdy nie zobaczy polowy pliku."""
     os.makedirs(directory, exist_ok=True)
     filepath = os.path.join(directory, filename)
     handle_fd, temp_path = tempfile.mkstemp(
@@ -150,7 +219,7 @@ def _write_report(directory: str, filename: str, lines: Sequence[str]) -> str:
     )
     try:
         with os.fdopen(handle_fd, "w", encoding="utf-8", newline="") as handle:
-            handle.write("\r\n".join(lines))
+            handle.write(content)
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temp_path, filepath)
@@ -189,11 +258,14 @@ def save_report(*, instrument_model: str, program: str, serial: str,
 
     try:
         filepath = _write_report(log_dir, filename, lines)
-        print(f"[LOG] Zapisano: {filepath}")
-        return filepath
+        print(f"[LOG] Zapisano raport S/N {serial}: {filepath}")
+        return ReportSaveResult(filepath, False, "")
     except OSError as primary_error:
+        # Przyczyne zapisujemy PRZED proba awaryjna - gdyby i ona zawiodla,
+        # informacja o tym, czemu nie dziala udzial, przepadlaby.
+        reason = str(primary_error)
+        print(f"[LOG] Sciezka podstawowa niedostepna: {log_dir} ({reason})")
         fallback_dir = get_fallback_log_dir()
         filepath = _write_report(fallback_dir, filename, lines)
-        print(f"[LOG] Sciezka podstawowa niedostepna: {log_dir} ({primary_error})")
-        print(f"[LOG] Zapis awaryjny: {filepath}")
-        return filepath
+        print(f"[LOG] Zapis awaryjny S/N {serial}: {filepath}")
+        return ReportSaveResult(filepath, True, reason)

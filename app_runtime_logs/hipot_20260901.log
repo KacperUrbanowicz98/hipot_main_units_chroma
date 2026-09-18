@@ -1,0 +1,74 @@
+
+[10:59:26.359801][OUT] ========================================================================
+[10:59:26.360030][OUT] [RUNTIME] Start sesji: 2026-09-01T10:59:26+02:00
+[10:59:26.360081][OUT] [RUNTIME] PID: 73568
+[10:59:26.360129][OUT] [RUNTIME] Python: 3.13.3 | frozen=False
+[10:59:26.360171][OUT] [RUNTIME] Log: C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\app_runtime_logs\hipot_20260901.log
+[10:59:26.360210][OUT] ========================================================================
+[10:59:26.672185][OUT] [RUNTIME] Reconext Hi-Pot Main Units 1.0.0
+[10:59:26.672303][OUT] [RUNTIME] Diagnostyka sesji: C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\app_runtime_logs\hipot_20260901.log
+[10:59:27.258236][OUT] [RUNTIME] Stanowisko: HIPOT-SR203-01 | Chroma 19053 na COM2 @19200 | interlock COM11
+[10:59:27.258339][OUT] [RUNTIME] Profile: ER115, SE210, SR203_SR204, SR213
+[10:59:42.548696][OUT] [AUDIT] PANEL/WEJSCIE
+[10:59:51.488740][ERR] [FATAL UI] Nieobsluzony wyjatek callbacku Tk:
+[10:59:51.488828][ERR] Traceback (most recent call last):
+[10:59:51.488828][ERR]   File "C:\Users\kacper.urbanowicz\AppData\Local\Programs\Python\Python313\Lib\tkinter\__init__.py", line 2068, in __call__
+[10:59:51.488828][ERR]     return self.func(*args)
+[10:59:51.488828][ERR]            ~~~~~~~~~^^^^^^^
+[10:59:51.488828][ERR]   File "C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\gui.py", line 655, in <lambda>
+[10:59:51.488828][ERR]     entry.bind("<Return>", lambda event: check_password())
+[10:59:51.488828][ERR]                                          ~~~~~~~~~~~~~~^^
+[10:59:51.488828][ERR]   File "C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\gui.py", line 634, in check_password
+[10:59:51.488828][ERR]     self._show_admin_panel()
+[10:59:51.488828][ERR]     ~~~~~~~~~~~~~~~~~~~~~~^^
+[10:59:51.488828][ERR]   File "C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\gui.py", line 682, in _show_admin_panel
+[10:59:51.488828][ERR]     self.show_scan_screen()
+[10:59:51.488828][ERR]     ~~~~~~~~~~~~~~~~~~~~~^^
+[10:59:51.488828][ERR]   File "C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\gui.py", line 113, in show_scan_screen
+[10:59:51.488828][ERR]     self._build_screen()
+[10:59:51.488828][ERR]     ~~~~~~~~~~~~~~~~~~^^
+[10:59:51.488828][ERR]   File "C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\gui.py", line 97, in _build_screen
+[10:59:51.488828][ERR]     self._create_scan_panel(self.main_frame)
+[10:59:51.488828][ERR]     ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+[10:59:51.488828][ERR]   File "C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\gui.py", line 196, in _create_scan_panel
+[10:59:51.488828][ERR]     self._create_profile_selector(panel)
+[10:59:51.488828][ERR]     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^
+[10:59:51.488828][ERR]   File "C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\gui.py", line 313, in _create_profile_selector
+[10:59:51.488828][ERR]     self._on_profile_selected()
+[10:59:51.488828][ERR]     ~~~~~~~~~~~~~~~~~~~~~~~~~^^
+[10:59:51.488828][ERR]   File "C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\gui.py", line 430, in _on_profile_selected
+[10:59:51.488828][ERR]     self._set_serial_hint(
+[10:59:51.488828][ERR]     ~~~~~~~~~~~~~~~~~~~~~^
+[10:59:51.488828][ERR]         "Numer seryjny: "
+[10:59:51.488828][ERR]         ^^^^^^^^^^^^^^^^^
+[10:59:51.488828][ERR]         + " lub ".join(str(x) for x in profile.serial_lengths)
+[10:59:51.488828][ERR]         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[10:59:51.488828][ERR]         + " znaków (A-Z, 0-9)")
+[10:59:51.488828][ERR]         ^^^^^^^^^^^^^^^^^^^^^^^
+[10:59:51.488828][ERR]   File "C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\gui.py", line 457, in _set_serial_hint
+[10:59:51.488828][ERR]     label.config(text=text)
+[10:59:51.488828][ERR]     ~~~~~~~~~~~~^^^^^^^^^^^
+[10:59:51.488828][ERR]   File "C:\Users\kacper.urbanowicz\AppData\Local\Programs\Python\Python313\Lib\tkinter\__init__.py", line 1822, in configure
+[10:59:51.488828][ERR]     return self._configure('configure', cnf, kw)
+[10:59:51.488828][ERR]            ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+[10:59:51.488828][ERR]   File "C:\Users\kacper.urbanowicz\AppData\Local\Programs\Python\Python313\Lib\tkinter\__init__.py", line 1812, in _configure
+[10:59:51.488828][ERR]     self.tk.call(_flatten((self._w, cmd)) + self._options(cnf))
+[10:59:51.488828][ERR]     ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[10:59:51.488828][ERR] _tkinter.TclError: invalid command name ".!frame2.!frame.!frame.!label3"
+
+
+[12:01:08.062507][OUT] ========================================================================
+[12:01:08.063143][OUT] [RUNTIME] Start sesji: 2026-09-01T12:01:08+02:00
+[12:01:08.063356][OUT] [RUNTIME] PID: 53548
+[12:01:08.063547][OUT] [RUNTIME] Python: 3.13.3 | frozen=False
+[12:01:08.063725][OUT] [RUNTIME] Log: C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\app_runtime_logs\hipot_20260901.log
+[12:01:08.063884][OUT] ========================================================================
+[12:01:08.268838][OUT] [RUNTIME] Reconext Hi-Pot Main Units 1.0.0
+[12:01:08.268927][OUT] [RUNTIME] Diagnostyka sesji: C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\app_runtime_logs\hipot_20260901.log
+[12:01:08.981046][OUT] [RUNTIME] Stanowisko: HIPOT-SR203-01 | Chroma 19053 na COM2 @19200 | interlock COM11
+[12:01:08.981154][OUT] [RUNTIME] Profile: ER115, SE210, SR203_SR204, SR213
+[12:01:15.781967][OUT] [AUDIT] PANEL/WEJSCIE
+[12:01:39.998426][OUT] [POLACZENIE] Blad: could not open port 'COM2': FileNotFoundError(2, 'Nie można odnaleźć określonego pliku.', None, 2)
+[12:01:40.019014][OUT] [INTERLOCK] Błąd połączenia: could not open port 'COM11': FileNotFoundError(2, 'Nie można odnaleźć określonego pliku.', None, 2)
+[12:02:16.356141][OUT] [STOP] Nie udalo sie wyslac STOP: Tester nie jest polaczony
+[12:02:16.356451][OUT] [INTERLOCK] Rozłączono

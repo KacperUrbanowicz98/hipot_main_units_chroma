@@ -18,10 +18,14 @@ Reconext Hi-Pot Main Units/
 ├─ Reconext Hi-Pot Main Units.exe
 ├─ station_config.json     ← USTAWIENIA STANOWISKA (porty, model, logi, hasło,
 │                             aktywne profile)
-├─ hwid_map.json           ← HWID → produkt + nazwa modelu
 ├─ products/
-│   └─ SR203_SR204.json    ← PROFIL PRODUKTU (napięcia, limity, kroki, kanały)
-├─ approved_sources.json   ← zatwierdzone sumy SHA-256 (kontrola wydania)
+│   ├─ SR203_SR204.json    ← PROFIL PRODUKTU (napięcia, limity, kroki, kanały)
+│   ├─ ER115.json
+│   ├─ SE210.json
+│   └─ SR213.json
+├─ approved_sources.json   ← sumy plikow zrodlowych (kontrola POMYLEK budowania,
+│                             sprawdzana WYLACZNIE przy budowaniu EXE)
+├─ profiles_manifest.json  ← sumy SHA-256 profili (kontrola przy KAZDYM starcie)
 ├─ app_runtime_logs/       ← dziennik sesji + config_audit.log
 └─ logs_pending/           ← raporty awaryjne, gdy \\IFS niedostępne
 ```
@@ -37,10 +41,10 @@ stanowiska jest lokalna.
 
 Bez logowania — operator skanuje SN i pracuje.
 
-1. Wybiera profil z listy (albo lista ma jeden pozycję i jest zablokowana),
-   skanuje S/N. Skąd bierze się profil, decyduje pole `serial.identify_by`
-   — patrz **2b**. Wyrób przypisany do profilu **wyłączonego na tym
-   stanowisku** jest odrzucany z czytelnym komunikatem.
+1. Wybiera profil z listy rozwijanej i **potwierdza wybór** pytaniem
+   TAK/NIE, potem skanuje S/N. Jeśli włączony jest tylko jeden profil,
+   lista jest zablokowana i nie ma czego potwierdzać. Numer seryjny jest
+   sprawdzany co do długości z profilu i zestawu znaków (A–Z, 0–9).
 2. Aplikacja łączy się z Chromą, sprawdza `*IDN?` **i model** względem
    `INSTRUMENT_MODEL`, kasuje stare kroki, programuje wszystkie kroki profilu,
    ustawia maski kanałów i **odczytuje wszystko zwrotnie**.
@@ -73,28 +77,32 @@ stanowisku**.
 
 ---
 
-## 2b. Skąd aplikacja wie, który profil uruchomić
+## 2b. Wybór profilu i numer seryjny
 
-Pole `serial.identify_by` w profilu:
+Profil wskazuje **operator** z listy na ekranie startowym. Lista pokazuje
+dokładnie te profile, które są zaznaczone w zakładce **Profile** panelu
+inżynieryjnego — profil wyłączony na stanowisku nie pojawia się na liście
+i nie da się go uruchomić.
 
-| Wartość | Źródło profilu | Numer seryjny |
-|---|---|---|
-| `hwid` (domyślne) | mapa HWID — pierwsze 6 znaków S/N | długość z profilu + prefiks musi być w mapie; wybór z listy **musi** się zgadzać z HWID |
-| `operator` | lista rozwijana na ekranie startowym | tylko długość i zestaw znaków |
+Każda **zmiana** wyboru wymaga potwierdzenia „Czy na pewno chcesz wybrać
+profil X?" (TAK/NIE). Odmowa cofa wybór na ostatni potwierdzony profil.
+Profil decyduje o napięciach i kanałach całego testu, a lista jest jedynym
+miejscem, gdzie się go wybiera — kliknięcie obok właściwej pozycji nie może
+przejść niezauważone.
 
-`SR203_SR204` używa `operator`: numery seryjne tych wyrobów nie niosą
-informacji o modelu, więc mapa HWID nie ma czego rozstrzygać i **może zostać
-pusta**. S/N musi mieć **dokładnie 14 znaków**, wyłącznie wielkie litery A–Z
-i cyfry 0–9. Małe litery są podnoszone już w trakcie wpisywania, żeby operator
-widział na ekranie dokładnie to, co trafi do raportu i do nazwy pliku.
+Numer seryjny jest sprawdzany **wyłącznie** co do:
 
-Jeżeli mimo `operator` prefiks sztuki **jest** opisany w mapie HWID i wskazuje
-inny profil — skan zostaje odrzucony. Kosztuje to nic, a chroni stanowisko
-mieszane.
+* długości — `serial.allowed_lengths` w profilu (dla wszystkich obecnych
+  wyrobów: dokładnie 14 znaków),
+* zestawu znaków — wielkie litery A–Z i cyfry 0–9.
 
-Profil z `identify_by: "hwid"`, który nie ma ani jednego wpisu w mapie,
-zatrzymuje **build** (preflight `create_exe.py`) — inaczej stanowisko
-odrzucałoby każdy skan.
+Małe litery są podnoszone już w trakcie wpisywania, więc operator widzi na
+ekranie dokładnie to, co trafi do raportu i do nazwy pliku.
+
+> **Mapy HWID nie ma.** Wcześniejsza wersja rozpoznawała produkt z pierwszych
+> 6 znaków numeru seryjnego. Numery wyrobów testowanych na Chromie nie niosą
+> informacji o modelu, więc mapa nie miała czego rozstrzygać — cały podsystem
+> został usunięty razem z zakładką panelu.
 
 ---
 
@@ -109,7 +117,7 @@ odrzucałoby każdy skan.
     "requires_scan_box": true,
     "channel_count": 8
   },
-  "serial": { "allowed_lengths": [14], "identify_by": "operator" },
+  "serial": { "allowed_lengths": [14] },
   "test_timeout_s": 60,
   "steps": [
     {
@@ -257,7 +265,7 @@ przy zadanym dwell nie zdąży zebrać wymaganych próbek.
 
 ## 6. Dostęp do panelu inżynieryjnego i ślad audytowy
 
-**Hasło: `reconext2026`** — wejście przez trzykrotne `Ctrl+Alt+D`.
+Wejście przez trzykrotne `Ctrl+Alt+D`. **Obowiązujące hasło stanowiska jest w dokumentacji wdrożeniowej — nie w tym pliku.**
 
 W kodzie źródłowym hasła **nie ma w postaci jawnej**; `station_config.json`
 zawiera tylko skrót PBKDF2-HMAC-SHA256 (200 000 iteracji, losowa sól), więc nie
@@ -270,8 +278,9 @@ NTFS na folderze stanowiska pozostają warunkiem koniecznym.
 
 - 3 nieudane próby → blokada 30 s. Licznik żyje przez całą sesję aplikacji.
 - Brak rekordu hasła w konfiguracji **zamyka** panel (nie otwiera go awaryjnie).
-- Hasło można zmienić w zakładce Bezpieczeństwo, jeśli kiedyś będzie taka
-  potrzeba.
+- Hasło jest stałe; zakładka do jego zmiany została usunięta. Nowy rekord
+  generuje się funkcją `security.hash_password()` i wkleja do
+  `station_config.json`.
 - `app_runtime_logs/config_audit.log`: wejścia do panelu, nieudane próby,
   każda zmiana parametru w formie `stara → nowa`.
 - Log sesji ma znaczniki czasu i kanał (`[OUT]`/`[ERR]`).
@@ -300,7 +309,8 @@ Builder blokuje build, gdy:
 - `station_config.json` nie zawiera rekordu hasła albo hasło standardowe
   przestało działać,
 - testy regresyjne nie przechodzą,
-- HWID wskazuje nieistniejący profil albo profil nie przechodzi walidacji.
+- profil nie przechodzi walidacji albo żaden profil nie jest włączony
+  na stanowisku.
 
 ---
 
@@ -329,8 +339,52 @@ Pokrywają m.in.:
 ## 9. Dodanie kolejnego produktu
 
 1. `products/<nazwa>.json` — profil ze wszystkimi krokami.
-2. Panel → Mapa HWID → dodaj HWID z przypisaniem do profilu i nazwą modelu.
+2. Panel → Profile → zaznacz profil jako aktywny na tym stanowisku.
 3. Panel → Diagnostyka SCPI → sonda (jeśli to nowy model testera).
 4. `python create_exe.py --approve` i build.
 
 Bez zmiany kodu.
+
+
+---
+
+## 10. Kontrola integralności profili
+
+Przy każdym starcie aplikacja liczy SHA-256 każdego `products/*.json`
+i porównuje z manifestem. Rozbieżność **blokuje testowanie**, pokazuje
+czerwony pas na ekranie startowym i trafia do dziennika audytowego.
+
+Zapis profilu z panelu inżynieryjnego aktualizuje manifest i zapisuje zmianę
+w dzienniku — edycja przez panel jest legalna i zostawia ślad. Edycja pliku
+Notatnikiem obok panelu zostaje wykryta.
+
+### Manifest lokalny kontra zewnętrzny — różnica jest istotna
+
+| `PROFILE_MANIFEST_PATH` | Gdzie leży manifest | Przed czym chroni |
+|---|---|---|
+| puste (domyślnie) | obok `products/` | edycja przypadkowa i „na szybko"; ktoś, kto podmieni oba pliki naraz, zostawi tylko brak wpisu w dzienniku |
+| ścieżka UNC | udział sieciowy **tylko do odczytu** | podmiana profilu na stanowisku nie da się ukryć — manifestu nie da się tam poprawić |
+
+Przy manifeście lokalnym ekran startowy pokazuje o tym informację, żeby nikt
+nie założył ochrony, której nie ma. Przy manifeście zewnętrznym zapis profilu
+z panelu **nie** aktualizuje manifestu — zmianę trzeba zatwierdzić i rozesłać
+nowy manifest; panel mówi o tym wprost.
+
+---
+
+## 11. Czego `approved_sources.json` NIE robi
+
+Ten plik jest sprawdzany **wyłącznie w preflighcie buildera** — w kodzie
+uruchomieniowym nie ma ani jednego odwołania. Nie obejmuje `products/*.json`
+ani `station_config.json`, czyli plików, które zostają na stanowisku
+i sterują testem. Lista leży obok źródeł, a regeneruje ją `--approve`.
+
+**Wartość realna:** wykrywa przypadkowe zbudowanie EXE ze starej kopii pliku.
+To kontrola pomyłek, nie kontrola bezpieczeństwa, i tak powinna być opisana
+w dokumentacji jakościowej.
+
+Kontrolą integralności na stanowisku jest `profiles_manifest.json` (pkt 10).
+
+Preflight buildera sprawdza dodatkowo **zachowanie**, nie obecność napisów:
+weryfikuje, że złe i puste hasło faktycznie odpadają, oraz że żadne pole
+tekstowe profilu nie zawiera znaków sterujących.

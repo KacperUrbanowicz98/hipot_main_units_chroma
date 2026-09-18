@@ -67,11 +67,21 @@ class ChromaDevice:
         self.identification = ""
 
         self._io_lock = threading.RLock()
+        # K1: przerwanie trwajacej wymiany I/O. query() trzyma _io_lock przez
+        # caly cykl ponowien (do ~3 s przy milczacym testerze), a STOP po
+        # otwarciu klapy czeka na te sama blokade. Flaga pozwala biezacemu
+        # odczytowi wyjsc w ciagu jednego timeoutu portu (0,20 s), zamiast
+        # trzymac wysokie napiecie na wyrobie przez pelny cykl ponowien.
+        self._abort_flag = threading.Event()
+        # Powod ostatniego nieudanego polaczenia. Jeden komunikat na cztery
+        # rozne sytuacje ("Brak polaczenia z Chroma") kazal technologowi
+        # zgadywac, czy to kabel, port zajety przez inna instancje, zly
+        # baudrate, czy tester innego modelu.
+        self.last_connect_error = ""
         self._rx_buffer = bytearray()
         self._cycle_id = 0
         self._cycle_active_confirmed = False
         self._cycle_started_monotonic: Optional[float] = None
-        self._local_keys_locked = False
         self._configured_step_count = 0
         # Zmierzony czas jednej iteracji odpytywania - potrzebny, zeby ocenic,
         # czy przy zadanym dwell da sie zebrac wymagane probki obciazenia.
@@ -104,16 +114,31 @@ class ChromaDevice:
 
             response = self.query(self.dialect.command("idn"), timeout=2.0, retries=2)
             if not response:
+                self.last_connect_error = (
+                    f"Port {self.port} otwarty, ale tester nie odpowiada na "
+                    f"*IDN?. Najczestsza przyczyna: baudrate stanowiska "
+                    f"({self.baudrate}) inny niz w menu SYSTEM testera, "
+                    f"albo kabel wpiety w zly port."
+                )
                 print("[IDN] Brak odpowiedzi na *IDN?")
                 self.disconnect(send_stop=False)
                 return False
 
             parts = [part.strip() for part in response.split(",")]
             if len(parts) < 2 or parts[0].upper() != "CHROMA":
+                self.last_connect_error = (
+                    f"Na porcie {self.port} odpowiada urzadzenie, ktore nie "
+                    f"jest testerem Chroma: '{response}'."
+                )
                 print(f"[IDN] To nie jest tester Chroma: {response}")
                 self.disconnect(send_stop=False)
                 return False
             if parts[1].upper() != self.dialect.model:
+                self.last_connect_error = (
+                    f"Podlaczony tester to Chroma {parts[1]}, a stanowisko jest "
+                    f"skonfigurowane pod {self.dialect.model}. Popraw model "
+                    f"w panelu (zakladka Stanowisko) albo wepnij wlasciwy kabel."
+                )
                 print(
                     f"[IDN] Model {parts[1]!r} nie zgadza sie z konfiguracja "
                     f"stanowiska ({self.dialect.model}). Sprawdz INSTRUMENT_MODEL."
@@ -130,6 +155,20 @@ class ChromaDevice:
             return True
 
         except Exception as exc:
+            text = str(exc)
+            if "PermissionError" in type(exc).__name__ or "Access is denied" in text:
+                self.last_connect_error = (
+                    f"Port {self.port} jest zajety przez inny program. "
+                    f"Zamknij druga instancje aplikacji albo terminal "
+                    f"szeregowy i sprobuj ponownie."
+                )
+            elif "could not open port" in text.lower():
+                self.last_connect_error = (
+                    f"Port {self.port} nie istnieje w systemie. Sprawdz numer "
+                    f"portu w Menedzerze urzadzen i w panelu (Stanowisko)."
+                )
+            else:
+                self.last_connect_error = f"Blad otwarcia portu {self.port}: {exc}"
             print(f"[POLACZENIE] Blad: {exc}")
             try:
                 if self.serial and self.serial.is_open:
@@ -151,7 +190,6 @@ class ChromaDevice:
         print(f"[KEYLOCK] ERR='{error}', STATE='{state}'")
         if not self._error_ok(error) or state is None or int(state) != 1:
             return False
-        self._local_keys_locked = True
         return True
 
     def disconnect(self, send_stop: bool = True) -> None:
@@ -171,7 +209,6 @@ class ChromaDevice:
                         pass
                     self.serial.close()
             finally:
-                self._local_keys_locked = False
                 self.connected = False
 
     # ------------------------------------------------------------------ #
@@ -223,6 +260,9 @@ class ChromaDevice:
             return ready
 
         while time.monotonic() < deadline:
+            if self._abort_flag.is_set():
+                # Zatrzymanie awaryjne czeka na _io_lock - oddajemy go od razu.
+                return None
             raw = self.serial.readline()
             if not raw:
                 continue
@@ -246,6 +286,8 @@ class ChromaDevice:
         attempts = max(1, retries)
         with self._io_lock:
             for attempt in range(attempts):
+                if self._abort_flag.is_set():
+                    return None
                 self._clear_input()
                 self._write_unlocked(command)
                 response = self._read_one_line_unlocked(timeout)
@@ -550,7 +592,10 @@ class ChromaDevice:
                 continue
             current.append(character)
         parts.append("".join(current).strip())
-        return [part for part in parts if part]
+        # NIE filtrujemy pustych pol: pozycje sa czytane pozycyjnie, wiec
+        # wyciecie pustego ARC przesuwalo TIME na miejsce ARC, RAMP na TIME
+        # i tak dalej (S4 z audytu). Puste pole zostaje pustym stringiem.
+        return parts
 
     def read_step_settings(self, index: int) -> dict[str, Any]:
         """Odczytuje WSZYSTKIE nastawy kroku jednym zapytaniem ``STEP:SET?``.
@@ -644,9 +689,33 @@ class ChromaDevice:
         return {"step_count": count, "frequency": frequency, "steps": steps,
                 "identity": getattr(self, "identification", "")}
 
+    def _check_step_number(self, settings: Mapping[str, Any], index: int) -> None:
+        """Numer kroku z SET? musi odpowiadac krokowi, ktory wlasnie badamy.
+
+        S10: pole bylo parsowane i nigdy nie sprawdzane. Szablon
+        w SCPI_OVERRIDES bez pola {step} (np. "SAFEty:STEP1:SET?") jest
+        przyjmowany bez bledu, bo str.format ignoruje nadmiarowe argumenty -
+        kazdy krok byl wtedy weryfikowany wzgledem nastaw kroku 1.
+        """
+        raw = settings.get("step")
+        if raw in (None, ""):
+            return
+        try:
+            reported = int(float(str(raw)))
+        except (TypeError, ValueError):
+            raise DeviceError(
+                f"Krok {index}: tester zwrocil nieczytelny numer kroku {raw!r}"
+            ) from None
+        if reported != index:
+            raise DeviceError(
+                f"Odczyt zwrotny dotyczy kroku {reported}, a badany jest krok "
+                f"{index} - sprawdz SCPI_OVERRIDES (szablon bez pola {{step}}?)"
+            )
+
     def _verify_step_readback(self, *, index: int, step: Mapping[str, Any],
                               i_high: float, i_low: float) -> None:
         settings = self.read_step_settings(index)
+        self._check_step_number(settings, index)
         label = f"Krok {index} / "
 
         if settings["mode"] != "AC":
@@ -748,9 +817,8 @@ class ChromaDevice:
             print(f"[START] ERR='{error}', KLOC='{keylock}'")
             if (not self._error_ok(error) or keylock is None
                     or int(keylock) != 1):
-                self.stop_test()
+                self.stop_test(verify=False)
                 return False
-            self._local_keys_locked = True
 
             deadline = time.monotonic() + 3.0
             active_confirmed = False
@@ -772,7 +840,7 @@ class ChromaDevice:
             if not active_confirmed:
                 print("[START] Brak potwierdzenia nowego aktywnego cyklu - "
                       "odrzucam mozliwy stary wynik LAST")
-                self.stop_test()
+                self.stop_test(verify=False)
                 return False
 
             self._cycle_id += 1
@@ -784,21 +852,100 @@ class ChromaDevice:
         except Exception as exc:
             print(f"[START] Blad rozpoczecia testu: {exc}")
             try:
-                self.stop_test()
+                self.stop_test(verify=False)
             except Exception:
                 pass
             return False
 
-    def stop_test(self) -> bool:
+    # Ponizej tego napiecia uznajemy, ze wysokie napiecie zgaslo.
+    HV_OFF_VOLTAGE = 50.0
+
+    def cycle_started_monotonic(self) -> Optional[float]:
+        """Znacznik czasu zapisu SAFEty:STARt dla POTWIERDZONEGO cyklu.
+
+        Punkt odniesienia dla bramek czasu w petli testowej. Liczenie ich od
+        momentu utworzenia watku wliczalo cala sekwencje startowa i psulo
+        oba progi naraz (K6).
+        """
+        if not self._cycle_active_confirmed:
+            return None
+        return self._cycle_started_monotonic
+
+    def request_stop(self, lock_timeout: float = 1.5) -> tuple[bool, str]:
+        """Wysyla STOP tak szybko, jak sie da. NIE weryfikuje skutku.
+
+        Przeznaczone do wywolania z watku interfejsu przy otwarciu klapy:
+        musi wrocic w ulamku sekundy, bo kazda milisekunda to wysokie
+        napiecie na wyrobie. Potwierdzenie zatrzymania (``confirm_stopped``)
+        wymaga kilku zapytan do testera i MUSI isc w tle - inaczej zamrozi
+        okno na czas, ktory chcemy wlasnie skrocic.
+        """
+        acquired = False
         try:
-            self.send_command(self.dialect.command("stop"))
-            return True
+            # K1: najpierw przerywamy trwajaca wymiane, potem bierzemy blokade.
+            self._abort_flag.set()
+            acquired = self._io_lock.acquire(timeout=max(0.1, lock_timeout))
+            try:
+                self._write_unlocked(self.dialect.command("stop"))
+                time.sleep(0.15)
+            finally:
+                self._abort_flag.clear()
+                if acquired:
+                    self._io_lock.release()
+                    acquired = False
+            return True, "STOP wyslany"
         except Exception as exc:
-            print(f"[STOP] Blad zatrzymania testu: {exc}")
-            return False
+            self._abort_flag.clear()
+            if acquired:
+                self._io_lock.release()
+            message = f"Nie udalo sie wyslac STOP: {exc}"
+            print(f"[STOP] {message}")
+            return False, message
         finally:
             self._cycle_active_confirmed = False
             self._cycle_started_monotonic = None
+
+    def stop_test(self, verify: bool = True,
+                  lock_timeout: float = 1.5) -> tuple[bool, str]:
+        """Zatrzymuje test i POTWIERDZA, ze tester faktycznie stanal.
+
+        Zwraca ``(potwierdzone, komunikat)``. Poprzednia wersja zwracala samo
+        ``True`` po udanym ``serial.write()`` i nikt tej wartosci nie sprawdzal
+        (K2 z audytu). Przy wypietym kablu DB9 zapis konczy sie sukcesem -
+        UART nadaje w prozanie - wiec samo powodzenie zapisu niczego nie
+        dowodzi. Jedynym dowodem jest odczyt z testera po STOPie.
+
+        ``verify=False`` sluzy sciezkom, ktore i tak zaraz rozlaczaja port.
+        """
+        sent, message = self.request_stop(lock_timeout)
+        if not sent or not verify:
+            return sent, message
+        return self.confirm_stopped()
+
+    def confirm_stopped(self, attempts: int = 3) -> tuple[bool, str]:
+        """Sprawdza w testerze, czy cykl stanal i czy napiecie zgaslo."""
+        last_status = "?"
+        last_voltage = None
+        for _ in range(max(1, attempts)):
+            status = self.get_status()
+            last_status = status
+            if status not in ACTIVE_STATUSES and status != "COMM_ERROR":
+                return True, f"Tester potwierdzil zatrzymanie (status {status})"
+
+            measurement = self.read_measurements()
+            if measurement is not None:
+                last_voltage = float(measurement.get("output_voltage", 0.0))
+                if last_voltage < self.HV_OFF_VOLTAGE:
+                    return True, (f"Napiecie zgaslo ({last_voltage:.0f} V), "
+                                  f"status {status}")
+            time.sleep(0.25)
+
+        detail = (f"status {last_status}"
+                  + (f", napiecie {last_voltage:.0f} V"
+                     if last_voltage is not None else ", brak odczytu napiecia"))
+        message = f"NIE POTWIERDZONO zatrzymania testera ({detail})"
+        print(f"[STOP] {message}")
+        return False, message
 
     # ------------------------------------------------------------------ #
     # STATUS I POMIARY
@@ -869,7 +1016,7 @@ class ChromaDevice:
         finally:
             self.last_poll_interval = time.monotonic() - started
 
-    def measure_poll_cycle(self, samples: int = 3) -> float:
+    def measure_poll_cycle(self) -> float:
         """Mierzy RZECZYWISTY czas jednej iteracji odpytywania w tescie.
 
         Iteracja to zapytanie statusu + FETCh - dokladnie to, co robi petla
@@ -882,7 +1029,7 @@ class ChromaDevice:
         Same zapytania - nie uruchamia testu i nie podaje napiecia.
         """
         durations: list[float] = []
-        for _ in range(max(1, int(samples))):
+        for _ in range(3):
             started = time.monotonic()
             self.get_status()
             self.read_measurements()

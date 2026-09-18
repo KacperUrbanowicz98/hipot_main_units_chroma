@@ -7,12 +7,16 @@ format raportu, kontrole dostepu i regresje bledow wykrytych w audycie 1.0.5.
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import re
 import sys
 import tempfile
+import threading
+import time
 import types
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
@@ -63,7 +67,7 @@ SINGLE_STEP_PROFILE_DATA = {
     "product_id": "TEST_1STEP",
     "display_name": "Atrapa 1-krokowa (19052)",
     "instrument": {"allowed_models": ["19052"], "requires_scan_box": False},
-    "serial": {"allowed_lengths": [14, 17], "identify_by": "hwid"},
+    "serial": {"allowed_lengths": [14, 17]},
     "test_timeout_s": 60,
     "steps": [{
         "name": "Izolacja",
@@ -108,6 +112,8 @@ class DummyConfig:
     COLOR_ACCENT = "green"
     COLOR_ERROR = "red"
     COLOR_WARNING = "orange"
+    COLOR_ACTION = "navy"
+    COLOR_ACTION_BG = "#E3F2FD"
     INSTRUMENT_MODEL = "19053"
     DEVICE_COM_PORT = "COM2"
     DEVICE_BAUDRATE = 19200
@@ -118,6 +124,8 @@ class DummyConfig:
     INTERLOCK_ENABLED = True
     STATION_ID = "HIPOT-TEST"
     LOG_DIR = "logs"
+    PROFILE_MANIFEST_PATH = ""
+    INTERLOCK_IDENTITY = ""
     # Musi byc True: reguly produkcyjne nie pozwalaja zapisac konfiguracji
     # z wylaczonym automatycznym zapisem raportow.
     AUTO_SAVE_RESULTS = True
@@ -143,6 +151,37 @@ class DummyWidget:
 
     def config(self, **kwargs):
         self.values.update(kwargs)
+
+    def cget(self, key):
+        return self.values.get(key, "")
+
+    def winfo_ismapped(self):
+        return False
+
+    def winfo_exists(self):
+        return True
+
+    def pack(self, **kwargs):
+        return None
+
+    def pack_forget(self):
+        return None
+
+    def coords(self, *args):
+        return None
+
+
+class DummyMessagebox:
+    """Atrapa okien modalnych - test nie moze czekac na klikniecie."""
+
+    def __init__(self):
+        self.calls: list[tuple[str, str]] = []
+
+    def _record(self, title, message, **_kwargs):
+        self.calls.append((title, message))
+        return True
+
+    showinfo = showwarning = showerror = askyesno = _record
 
 
 class DummySerial:
@@ -188,7 +227,6 @@ class FakeScan:
         self.serial = serial
         self.model_name = model
         self.product_id = profile.product_id
-        self.hwid = serial[:6]
 
 
 class FakeMultiStepDevice:
@@ -205,9 +243,24 @@ class FakeMultiStepDevice:
         self.last_poll_interval = 0.02
         self.poll = 0
         self.stop_calls = 0
+        self._cycle_started = None
 
     def start_test(self):
+        # Przez modul test_screen, zeby zlapac zegar podstawiony przez test.
+        import test_screen as _screen
+
+        self._cycle_started = _screen.time.monotonic()
         return True
+
+    def cycle_started_monotonic(self):
+        return self._cycle_started
+
+    def request_stop(self):
+        self.stop_calls += 1
+        return True, "STOP wyslany"
+
+    def confirm_stopped(self, attempts=3):
+        return True, "atrapa: zatrzymane"
 
     @property
     def _total_polls(self):
@@ -247,9 +300,13 @@ class FakeMultiStepDevice:
                 "measured_current": self.currents_ma[index - 1],
                 "real_current": 0.0,
             })
+        import test_screen as _screen
+
         failed = [entry for entry in entries if entry["result"] != "PASS"]
         overall = "FAIL" if failed else "PASS"
         return overall, {
+            "cycle_elapsed": (_screen.time.monotonic() - self._cycle_started
+                              if self._cycle_started is not None else 0.0),
             "fresh_cycle": True,
             "cycle_id": 1,
             "steps": entries,
@@ -257,9 +314,9 @@ class FakeMultiStepDevice:
             "failed_step": failed[0]["name"] if failed else "",
         }
 
-    def stop_test(self):
+    def stop_test(self, verify=True, lock_timeout=1.5):
         self.stop_calls += 1
-        return True
+        return True, "atrapa: zatrzymane"
 
     def disconnect(self, send_stop=True):
         self.connected = False
@@ -313,9 +370,24 @@ def test_step_and_channel_rules() -> None:
 def test_profile_catalog() -> None:
     catalog = ProductCatalog(ROOT / "products")
     assert not catalog.errors, f"Profile odrzucone: {catalog.errors}"
-    # Cztery warianty znalezione w firmie zostaly ujednolicone do JEDNEGO
-    # profilu - katalog nie moze zawierac osobnych wpisow NR801 / SE210.
-    assert set(catalog.ids()) == {"SR203_SR204"}
+    # Profile stanowisk Auto Branch 1. SR203_SR204 to JEDEN profil scalony
+    # z czterech wariantow; ER115 / SE210 / SR213 to odrebne wyroby.
+    assert set(catalog.ids()) == {"SR203_SR204", "ER115", "SE210", "SR213"}
+
+    # Kazdy profil: S/N dokladnie 14 znakow.
+    for profile in catalog.all():
+        assert profile.serial_lengths == (14,), profile.product_id
+        assert profile.allowed_models == ("19053",), profile.product_id
+
+    # SR213 ma w tabeli zrodlowej krok 'Ethernet 3' i 'ADSL' na TYM SAMYM
+    # kanale 6. To nie jest blad walidacji - fixture moze tak byc zrobiony -
+    # ale profil MUSI o tym ostrzegac, bo to typowy objaw pomylki przy
+    # przepisywaniu maski. Gdy kolizja zostanie wyjasniona i poprawiona,
+    # ten test upadnie i trzeba go zaktualizowac swiadomie.
+    sr213 = catalog.get("SR213")
+    assert sr213.step_count == 6
+    assert any("kanal 6" in w for w in sr213.channel_warnings), \
+        sr213.channel_warnings
     # Identyfikatory profili sa WIELKIMI literami, jak nazwy wyrobow.
     assert all(pid == pid.upper() for pid in catalog.ids()), catalog.ids()
     # Dopasowanie pozostaje niewrazliwe na wielkosc liter.
@@ -338,8 +410,6 @@ def test_profile_catalog() -> None:
     assert [step["limit_low"] for step in sr.steps] == [0.2, 0.2, 0.2, 0.2, 0.05]
     assert all(step["limit_high"] == 1.0 for step in sr.steps)
     assert sr.report_program == "SR203.204"
-    # Identyfikacja wyrobu: wybor operatora, nie mapa HWID.
-    assert sr.identify_by == "operator" and not sr.requires_hwid
     # Numer seryjny: dokladnie 14 znakow, wylacznie wielkie litery i cyfry.
     assert sr.serial_lengths == (14,)
     assert sr.validate_serial("d21022ad023966") == "D21022AD023966"
@@ -347,14 +417,6 @@ def test_profile_catalog() -> None:
     expect_error(lambda: sr.validate_serial("D21022AD0239667"), "S/N 15 znakow")
     expect_error(lambda: sr.validate_serial("D21022-AD02396"), "S/N ze znakiem -")
 
-    # identify_by musi byc jedna z dwoch znanych wartosci.
-    expect_error(
-        lambda: ProductProfile({**SR_PROFILE_DATA, "serial": {
-            "allowed_lengths": [14], "identify_by": "cokolwiek"}}),
-        "nieznane serial.identify_by")
-    # Brak pola = identyfikacja z HWID, czyli zachowanie sprzed zmiany.
-    assert ProductProfile({**SR_PROFILE_DATA, "serial": {
-        "allowed_lengths": [14]}}).identify_by == "hwid"
 
     single = single_step_profile()
     assert single.step_count == 1 and not single.requires_scan_box
@@ -830,11 +892,11 @@ def test_fresh_cycle_guard() -> None:
             return {"step": 1, "output_voltage": float(voltage),
                     "measure_current": 0.0017, "real_current": 0.0}
 
-        def stop_test(self):
+        def stop_test(self, verify=True, lock_timeout=1.5):
             self.stopped = True
             self.impl._cycle_active_confirmed = False
             self.impl._cycle_started_monotonic = None
-            return True
+            return True, "atrapa: zatrzymane"
 
     clock = FakeClock()
     with patch("hipot_device.time.monotonic", clock.monotonic), \
@@ -917,7 +979,14 @@ def test_interlock_state_machine() -> None:
     profile = catalog.get("SR203_SR204")
     screen = TestScreen(None, DummyConfig(), FakeScan(profile))
     screen.device = type("Device", (), {
-        "connected": True, "stop_test": lambda self: True})()
+        "connected": True,
+        "stop_test": lambda self, verify=True, lock_timeout=1.5:
+            (True, "atrapa"),
+        # K1: STOP z watku Tk idzie przez request_stop (szybki zapis),
+        # a potwierdzenie leci osobno w tle.
+        "request_stop": lambda self, lock_timeout=1.5: (True, "atrapa"),
+        "confirm_stopped": lambda self, attempts=3: (True, "atrapa"),
+    })()
     screen.interlock = type("Interlock", (), {"connected": True})()
     screen._device_configured = True
     for name in ("interlock_label", "interlock_frame", "start_button",
@@ -952,7 +1021,12 @@ def test_interlock_state_machine() -> None:
     # Utrata interlocka w trakcie testu przerywa cykl i blokuje kolejne.
     screen2 = TestScreen(None, DummyConfig(), FakeScan(profile))
     screen2.device = type("Device", (), {
-        "connected": True, "stop_test": lambda self: True})()
+        "connected": True,
+        "stop_test": lambda self, verify=True, lock_timeout=1.5:
+            (True, "atrapa"),
+        "request_stop": lambda self, lock_timeout=1.5: (True, "atrapa"),
+        "confirm_stopped": lambda self, attempts=3: (True, "atrapa"),
+    })()
     screen2.interlock = type("Interlock", (), {"connected": True})()
     screen2._device_configured = True
     for name in ("interlock_label", "interlock_frame", "start_button",
@@ -968,34 +1042,36 @@ def test_interlock_state_machine() -> None:
     assert shown, "Utrata interlocka musi byc zgloszona operatorowi"
 
 
-def test_product_mismatch_blocks_next_serial() -> None:
-    """Zeskanowanie innego produktu nie moze uruchomic zlego profilu."""
-    from test_screen import TestScreen
+def test_next_serial_keeps_station_profile() -> None:
+    """Kolejny S/N zawsze nalezy do profilu, na ktorym pracuje stanowisko.
+
+    Wczesniej ``_accept_scan`` porownywalo ``scan.product_id`` z profilem
+    ekranu. Po usunieciu mapy HWID numer seryjny nie niesie informacji
+    o produkcie, wiec ``resolve_serial`` Z DEFINICJI zwraca profil podany
+    na wejsciu - warunek nie mogl byc prawdziwy. Zostal usuniety jako
+    martwy, bo przy czytaniu kodu sugerowal zabezpieczenie, ktorego nie ma.
+    Zmiana profilu wymaga powrotu do menu.
+    """
+    from product_profile import resolve_serial
+
+    source = (ROOT / "test_screen.py").read_text(encoding="utf-8")
+    assert "scan.product_id != self.profile.product_id" not in source, (
+        "martwa kontrola produktu wrocila do _accept_scan")
 
     catalog = ProductCatalog(ROOT / "products")
     sr = catalog.get("SR203_SR204")
-    other_profile = single_step_profile()
+    other = catalog.get("SR213")
 
-    screen = TestScreen(None, DummyConfig(), FakeScan(sr))
-    screen.sn_status_lbl = DummyWidget()
-    other = FakeScan(other_profile, serial="TEST1112345678", model="Atrapa")
-    assert screen._accept_scan(other) is False
-    assert "Wróć do menu" in screen.sn_status_lbl.values["text"]
-    assert screen.serial == "SR203012345678", "SN nie moze zostac podmieniony"
+    # Ten sam numer, dwa rozne profile -> profil bierze sie WYLACZNIE
+    # z tego, co przekazano, nigdy z numeru seryjnego.
+    for profile in (sr, other):
+        ok, scan = resolve_serial(profile, "D70021AC017377")
+        assert ok and scan.profile is profile
+        assert scan.product_id == profile.product_id
 
-    same = FakeScan(sr, serial="SR204012345678", model="SR204")
-    for name in ("start_button", "next_sn_button", "sn_display_label",
-                 "voltage_label", "current_label", "time_label", "status_label",
-                 "live_title"):
-        setattr(screen, name, DummyWidget())
-    screen.progress_canvas = type("Canvas", (), {
-        "coords": lambda self, *args: None})()
-    screen.progress_rect = 0
-    screen._step_rows = {}
-    assert screen._accept_scan(same) is True
-    assert screen.serial == "SR204012345678"
-    assert screen.model_name == "SR204"
-
+    # Numer nadal musi przejsc walidacje dlugosci i zestawu znakow.
+    ok, message = resolve_serial(sr, "D70021AC01737")
+    assert not ok and "dlugosc" in str(message).lower()
 
 def test_enabled_products_gate() -> None:
     """Profil wylaczony na stanowisku nie moze zostac uruchomiony."""
@@ -1081,63 +1157,6 @@ def test_profile_step_reordering() -> None:
     for position, delta in ((0, -1), (len(steps) - 1, 1)):
         assert not 0 <= position + delta < len(steps)
 
-
-
-def test_next_serial_dialog_uses_profile_rules() -> None:
-    """REGRESJA: okno "nastepny SN" pytalo mape HWID nawet dla SR203_SR204.
-
-    Zgloszenie ze stanowiska 26.08.2026: po pierwszym PASS-ie okno kolejnego
-    numeru odrzucalo poprawny S/N komunikatem "Nieznany HWID 'D70021' - brak
-    w mapie". Ekran startowy byl juz poprawiony, ale test_screen mial WLASNA
-    kopie logiki i o zmianie nie wiedzial. Test pilnuje, ze oba ekrany ida
-    przez ta sama funkcje.
-    """
-    import hwid_map as hwid_module
-    from hwid_map import resolve_for_profile
-
-    catalog = ProductCatalog(ROOT / "products")
-    profile = catalog.get("SR203_SR204")
-
-    # Zaden z tych plikow nie moze rozwiazywac S/N na wlasna reke.
-    for name in ("gui.py", "test_screen.py"):
-        source = (ROOT / name).read_text(encoding="utf-8")
-        assert "resolve_for_profile" in source, f"{name}: brak wspolnej funkcji"
-        assert "HwidMap().resolve" not in source, \
-            f"{name}: wlasna sciezka HWID wrocila"
-
-    # Pusta mapa + profil identyfikowany przez operatora = numer przechodzi.
-    previous_cwd = os.getcwd()
-    with tempfile.TemporaryDirectory() as folder:
-        try:
-            os.chdir(folder)
-            Path("hwid_map.json").write_text('{"schema_version": 1}',
-                                             encoding="utf-8")
-            hwid_module.invalidate_cache()
-
-            ok, scan = resolve_for_profile(profile, "D70021AC017379", catalog)
-            assert ok, scan
-            assert scan.serial == "D70021AC017379"
-            assert scan.product_id == "SR203_SR204"
-            assert scan.model_name == "SR203 / SR204"
-
-            # Numer z realnego testu ze stanowiska - ten sam prefiks D70021.
-            ok, scan = resolve_for_profile(profile, "D70021AC017377", catalog)
-            assert ok and scan.hwid == "D70021"
-
-            # Za krotki numer nadal musi zostac odrzucony.
-            ok, message = resolve_for_profile(profile, "D70021AC01737", catalog)
-            assert not ok and "dlugosc" in str(message).lower()
-
-            # Profil identyfikowany z HWID przy pustej mapie -> odmowa.
-            hwid_profile = ProductProfile({**SR_PROFILE_DATA, "serial": {
-                "allowed_lengths": [14], "identify_by": "hwid"}})
-            hwid_module.invalidate_cache()
-            ok, message = resolve_for_profile(hwid_profile, "D70021AC017379",
-                                              catalog)
-            assert not ok, "profil HWID nie moze przejsc przy pustej mapie"
-        finally:
-            os.chdir(previous_cwd)
-            hwid_module.invalidate_cache()
 
 
 def test_read_program_matches_station_readout() -> None:
@@ -1268,93 +1287,283 @@ def _compare_profile_to_program(profile, program) -> list[str]:
     return differences
 
 
-def test_operator_identified_profile_scan() -> None:
-    """SR203/SR204: profil z listy, S/N tylko walidowany (14 znakow, A-Z 0-9)."""
-    import gui as gui_module
+def test_admin_panel_tabs() -> None:
+    """Panel ma dokladnie piec zakladek - bez Mapy HWID i Bezpieczenstwa.
 
-    source = (ROOT / "gui.py").read_text(encoding="utf-8")
-    for marker in ("_resolve_by_operator_choice", "_resolve_by_hwid",
-                   "requires_hwid", "_force_uppercase_serial"):
-        assert marker in source, f"gui.py: brak {marker!r}"
+    Mapa HWID odpadla, bo na Chromie zaden profil jej nie uzywa - liczy sie
+    dlugosc numeru seryjnego. Bezpieczenstwo odpadlo, bo haslo panelu jest
+    stale i nie bylo juz czego w tej zakladce zmieniac. Dziennik audytowy
+    z tamtej zakladki MUSIAL zostac - to jedyny zapis, kto zmienil nastawy -
+    wiec przeniesiono go do zakladki Logi.
+    """
+    source = (ROOT / "admin_panel.py").read_text(encoding="utf-8")
 
-    catalog = ProductCatalog(ROOT / "products")
-    profile = catalog.get("SR203_SR204")
+    for gone in ("_create_hwid_tab", "_create_security_tab", "_save_password",
+                 "Mapa HWID", "Bezpieczeństwo", "_pw_new_var"):
+        assert gone not in source, f"admin_panel.py: pozostalo {gone!r}"
 
-    class FakeApp:
-        def __init__(self, hwid_entry=None):
-            self.catalog = catalog
-            self.rejected: list[str] = []
-            self._hwid_entry = hwid_entry
+    expected = ["Stanowisko", "Interlock", "Profile", "Logi",
+                "Diagnostyka SCPI"]
+    called = re.findall(r"self\._create_(\w+)_tab\(\)", source)
+    assert called == ["station", "interlock", "profile", "logs", "diagnostics"], \
+        called
 
-        def _reject_scan(self, message):
-            self.rejected.append(message)
+    # Dziennik audytowy przeniesiony, nie skasowany.
+    assert "_create_audit_note" in source
+    assert "audit_log_path" in source
+    logs_tab = source[source.index("def _create_logs_tab"):]
+    assert "_create_audit_note" in logs_tab[:400], \
+        "dziennik audytowy nie jest budowany w zakladce Logi"
 
-    def resolve(app, serial):
-        entries = {"SR2030": app._hwid_entry} if app._hwid_entry else {}
-
-        class FakeMap:
-            def __init__(self, _catalog=None):
-                pass
-
-            def get_entry(self, value):
-                return entries.get(value[:6])
-
-        import hwid_map as hwid_module
-        with patch.object(hwid_module, "HwidMap", FakeMap):
-            return gui_module.HiPotApp._resolve_by_operator_choice(
-                app, serial, profile)
-
-    # Poprawny S/N: profil bierze sie z wyboru operatora, nie z HWID.
-    app = FakeApp()
-    scan = resolve(app, "D21022AD023966")
-    assert scan is not None and not app.rejected
-    assert scan.serial == "D21022AD023966"
-    assert scan.product_id == "SR203_SR204"
-    assert scan.model_name == profile.display_name
-    assert scan.profile is profile
-
-    # Male litery sa podnoszone, nie odrzucane.
-    app = FakeApp()
-    assert resolve(app, "d21022ad023966").serial == "D21022AD023966"
-
-    # Zla dlugosc i niedozwolone znaki musza zostac odrzucone.
-    for bad in ("D21022AD02396", "D21022AD0239667", "D21022-AD02396", ""):
-        app = FakeApp()
-        assert resolve(app, bad) is None, bad
-        assert app.rejected, bad
-
-    # Jesli mapa HWID opisuje ten prefiks INNYM profilem - odrzucamy.
-    app = FakeApp(hwid_entry={"product": "TEST_1STEP", "model": "X"})
-    assert resolve(app, "SR203012345678") is None
-    assert app.rejected and "TEST_1STEP" in app.rejected[0]
-
-    # Zgodny wpis w mapie nie przeszkadza.
-    app = FakeApp(hwid_entry={"product": "SR203_SR204", "model": "SR203"})
-    assert resolve(app, "SR203012345678") is not None
-    assert not app.rejected
-
-    # Pole S/N musi pokazywac wielkie litery, a nie tylko je walidowac.
-    # Podniesienie idzie przez widget w after_idle - ustawienie StringVar
-    # wewnatrz jego wlasnego trace'a nie odswieza tresci pola w Tk.
     import tkinter as tk
+    from admin_panel import AdminPanel
 
     root = tk.Tk()
     try:
         root.withdraw()
-        entry = tk.Entry(root)
-        holder = type("Holder", (), {})()
-        holder.root = root
-        holder.serial_entry = entry
-        holder._uppercase_pending = False
-        entry.insert(0, "d21022ad023966")
-        gui_module.HiPotApp._apply_uppercase_serial(holder)
-        assert entry.get() == "D21022AD023966", entry.get()
-        # Wywolanie na juz podniesionej wartosci nic nie zmienia.
-        gui_module.HiPotApp._apply_uppercase_serial(holder)
-        assert entry.get() == "D21022AD023966"
+        panel = AdminPanel(root, DummyConfig(), ProductCatalog(ROOT / "products"))
+        panel.show()
+        labels = [panel.notebook.tab(i, "text").strip()
+                  for i in range(panel.notebook.index("end"))]
+        assert labels == expected, labels
     finally:
         root.destroy()
 
+
+def test_recovery_after_abort() -> None:
+    """Po przerwanym tescie mozna wrocic do skanowania BEZ wyjscia do menu.
+
+    Zgloszenie ze stanowiska 17.09.2026: po otwarciu klapy w trakcie testu
+    jedynym wyjsciem byl "Powrot do menu", czyli rozlaczenie testera,
+    przebudowa ekranu i pelna procedura polaczenia od nowa. Przy 9600 bodach
+    samo zaprogramowanie pieciu krokow z odczytem zwrotnym to kilkanascie
+    sekund - nieproporcjonalna kara za przypadkowe otwarcie klapy.
+    """
+    from test_screen import TestScreen
+
+    catalog = ProductCatalog(ROOT / "products")
+    profile = catalog.get("SR203_SR204")
+    screen = TestScreen(None, DummyConfig(), FakeScan(profile))
+
+    configured: list[str] = []
+
+    class Device:
+        connected = True
+
+        def request_stop(self, lock_timeout=1.5):
+            return True, "atrapa"
+
+        def confirm_stopped(self, attempts=3):
+            return True, "atrapa"
+
+        def clear_steps(self):
+            configured.append("clear")
+
+        def configure_profile(self, profile):
+            configured.append("configure")
+
+        def measure_poll_cycle(self):
+            return 0.05
+
+    screen.device = Device()
+    for name in ("status_label", "stop_button", "back_button",
+                 "next_sn_button", "start_button", "verdict_label",
+                 "verdict_frame", "sampling_warning_label", "live_title",
+                 "voltage_label", "current_label", "time_label",
+                 "sn_display_label", "progress_canvas"):
+        setattr(screen, name, DummyWidget())
+    screen._set_verdict = lambda text, color: None
+    screen._reset_step_rows = lambda: None
+    screen._show_next_sn_dialog = lambda result: configured.append("dialog")
+    screen._record_incomplete_run = lambda kind, detail: None
+    screen._refresh_history = lambda: None
+
+    posted: list = []
+    screen._post_ui = posted.append
+
+    # Przerwanie testu otwarciem klapy. Okna modalne zastapione atrapa -
+    # bez tego test czekalby na klikniecie operatora.
+    import test_screen as screen_module
+
+    screen.test_running = True
+    with patch.object(screen_module, "messagebox", DummyMessagebox()):
+        screen._abort_running_test(status="przerwany", title="Test przerwany",
+                                   message="", icon="warning")
+    assert screen._needs_recovery is True, (
+        "po przerwaniu brak drogi powrotu do skanowania")
+    assert screen._device_configured is False
+
+    # Przycisk "Nastepny SN" ma najpierw PRZYGOTOWAC stanowisko.
+    screen._open_sn_dialog_manually()
+    deadline = time.monotonic() + 5.0
+    while not posted and time.monotonic() < deadline:
+        time.sleep(0.02)
+    for callback in list(posted):
+        callback()
+
+    assert configured[:2] == ["clear", "configure"], configured
+    assert "dialog" in configured, "okno skanowania nie zostalo otwarte"
+    assert screen._device_configured is True
+    assert screen._needs_recovery is False
+    # Swieze przejscie OPEN -> CLOSED jest nadal wymagane.
+    assert screen._valid_close_transition is False
+    assert screen._serial_ready_for_test is False
+
+    # Zrodlo: przycisk musi zmieniac rolę, a nie byc drugim przyciskiem.
+    source = (ROOT / "test_screen.py").read_text(encoding="utf-8")
+    assert "_recover_for_next_unit" in source
+    assert "Przygotuj kolejną sztukę" in source
+
+
+def test_scan_screen_survives_rebuild() -> None:
+    """REGRESJA: zamkniecie panelu inzynieryjnego przewracalo aplikacje.
+
+    Zgloszenie ze stanowiska 01.09.2026:
+    ``_tkinter.TclError: invalid command name ".!frame2.!frame.!frame.!label3"``
+    i zamkniecie aplikacji przez fatalny handler Tk.
+
+    Przyczyna: ``show_scan_screen()`` niszczy wszystkie widgety, ale atrybuty
+    obiektu nadal wskazywaly na ZNISZCZONE widgety. Przy odbudowie
+    ``_create_profile_selector`` wola ``_on_profile_selected`` ZANIM powstanie
+    ``serial_hint_label``, wiec ``_set_serial_hint`` trafialo w stary,
+    nieistniejacy juz widget.
+
+    Test odtwarza dokladnie te sciezke: pelny ekran, zniszczenie, odbudowa.
+    """
+    import tkinter as tk
+
+    import gui as gui_module
+    from station_config import StationConfig
+
+    source = (ROOT / "gui.py").read_text(encoding="utf-8")
+    assert "_clear_screen_widgets" in source, (
+        "brak zerowania referencji do widgetow przy przebudowie")
+    assert "_widget_alive" in source, (
+        "brak sprawdzania, czy widget nadal istnieje")
+
+    root = tk.Tk()
+    try:
+        root.withdraw()
+        patcher = patch.object(StationConfig, "is_product_enabled",
+                               lambda self, product_id: True)
+        patcher.start()
+        try:
+            app = gui_module.HiPotApp(root)
+            first_hint = app.serial_hint_label
+
+            # Dokladnie to, co robi zamkniecie panelu inzynieryjnego.
+            # Przechwytujemy wyjscie: sama poprawka odpornosciowa (try/except
+            # wokol config) sprawia, ze aplikacja nie pada - ale bledu wtedy
+            # nadal NIE MA PRAWA byc. Test pilnuje przyczyny, nie objawu.
+            # Niezmiennik: w trakcie przebudowy atrybut widgetu jest ALBO
+            # None, ALBO wskazuje zywy widget - nigdy zniszczony. Sprawdzamy
+            # przyczyne wprost, bo sam brak awarii niczego nie dowodzi:
+            # zabezpieczenie w _set_serial_hint i tak polknie wyjatek.
+            stale: list[str] = []
+            original_hint = gui_module.HiPotApp._set_serial_hint
+
+            def checked_hint(self, text):
+                widget = getattr(self, "serial_hint_label", None)
+                if widget is not None and not self._widget_alive(widget):
+                    stale.append(str(widget))
+                return original_hint(self, text)
+
+            with patch.object(gui_module.HiPotApp, "_set_serial_hint",
+                              checked_hint):
+                for _ in range(3):
+                    app.show_scan_screen()
+                    root.update_idletasks()
+            assert not stale, (
+                "przebudowa siega do zniszczonych widgetow: " + str(stale))
+
+            assert app.serial_hint_label is not first_hint, (
+                "po przebudowie atrybut wskazuje stary widget")
+            assert app._widget_alive(app.serial_hint_label)
+            assert app._widget_alive(app.serial_entry)
+            assert app._widget_alive(app.profile_banner_title)
+
+            # Ekran musi byc w pelni sprawny po odbudowie.
+            label = next(name for name, profile in app._profile_choices.items()
+                         if profile.product_id == "SR203_SR204")
+            app._selected_profile_var.set(label)
+            app._on_profile_selected()
+            assert "znaków" in app.serial_hint_label.cget("text")
+
+            app.serial_entry.insert(0, "d70021ac017377")
+            root.update_idletasks()
+            root.update()
+            assert app.serial_entry.get() == "D70021AC017377"
+
+            # Blad budowy ekranu NIE moze zamykac aplikacji - przebudowa
+            # nigdy nie zachodzi przy podanym wysokim napieciu.
+            with patch.object(gui_module.HiPotApp, "_create_scan_panel",
+                              side_effect=RuntimeError("test")):
+                app.show_scan_screen()
+                root.update_idletasks()
+            assert root.winfo_children(), "ekran bledu nie zostal zbudowany"
+        finally:
+            patcher.stop()
+    finally:
+        root.destroy()
+
+
+def test_profile_choice_is_explicit() -> None:
+    """W1/W2: profil musi byc wskazany swiadomie i widoczny przez caly czas.
+
+    Poprzednie zabezpieczenie - pytanie TAK/NIE przy zmianie - nie dzialalo:
+    przy jednym wlaczonym profilu lista byla zablokowana i dialog nie
+    pojawial sie NIGDY, a Enter z czytnika kodow odpowiadal na nie "NIE"
+    (default="no"). Zastapione stalym paskiem z napieciami i kanalami.
+    """
+    import tkinter as tk
+
+    import gui as gui_module
+    from station_config import StationConfig
+
+    source = (ROOT / "gui.py").read_text(encoding="utf-8")
+    assert "askyesno" not in source.split("_create_profile_selector")[-1][:4000], (
+        "wrocilo pytanie potwierdzajace zamiast stalego paska")
+    assert "_profile_summary" in source
+
+    root = tk.Tk()
+    try:
+        root.withdraw()
+        patcher = patch.object(StationConfig, "is_product_enabled",
+                               lambda self, product_id: True)
+        patcher.start()
+        self_cleanup = patcher.stop
+        app = gui_module.HiPotApp(root)
+        assert len(app._profile_choices) >= 2, app._profile_choices
+
+        # Przy wiecej niz jednym profilu pole startuje PUSTE.
+        assert app._selected_profile_var.get() == "", (
+            "lista profili nie moze miec wartosci domyslnej")
+
+        # Skan bez wskazanego profilu musi zostac odrzucony.
+        app.serial_entry.insert(0, "D70021AC017377")
+        app._process_serial()
+        assert "Najpierw wybierz profil" in app.scan_status_label.cget("text"), (
+            app.scan_status_label.cget("text"))
+
+        # Pasek profilu podaje NAPIECIA - faktyczna konsekwencje wyboru.
+        label = next(name for name, profile in app._profile_choices.items()
+                     if profile.product_id == "SR213")
+        app._selected_profile_var.set(label)
+        app._on_profile_selected()
+        assert app.profile_banner_title.cget("text") == "SR213"
+        summary = app.profile_info_label.cget("text")
+        assert "1.06 kV" in summary and "1.50 kV" in summary, summary
+        assert "kanały" in summary, summary
+
+        # Po wskazaniu profilu ten sam numer przechodzi.
+        app.serial_entry.delete(0, tk.END)
+        app.serial_entry.insert(0, "D70021AC017377")
+        app._process_serial()
+        assert "✓" in app.scan_status_label.cget("text"), (
+            app.scan_status_label.cget("text"))
+        self_cleanup()
+    finally:
+        root.destroy()
 
 def test_start_screen_profile_list() -> None:
     """Lista na starcie musi zawierac DOKLADNIE profile wlaczone w panelu."""
@@ -1376,15 +1585,36 @@ def test_start_screen_profile_list() -> None:
         ]
 
     # Brak ograniczenia = wszystkie profile na liscie.
-    assert visible_labels(None) == ["SR203 / SR204"]
+    assert visible_labels(None) == ["ER115", "SE210", "SR203 / SR204", "SR213"]
     # Wylaczony profil NIE moze pojawic sie na liscie.
     assert visible_labels(["SR203_SR204"]) == ["SR203 / SR204"]
+    assert visible_labels(["ER115", "SR213"]) == ["ER115", "SR213"]
     assert visible_labels(["TEST_1STEP"]) == []
 
-    # Wybor z listy nie nadpisuje HWID - musi sie z nim zgadzac.
-    assert "scan.product_id != selected.product_id" in source, (
-        "brak kontroli zgodnosci wybranego profilu z HWID")
-    assert "popraw wybór albo weź właściwy wyrób" in source
+    # Wybor profilu i jego widocznosc sa sprawdzane funkcjonalnie
+    # w test_profile_choice_is_explicit.
+
+    # Czcionka rozwinietej listy jest osobna od czcionki pola - bez
+    # option_add operator widzi drobny tekst dokladnie tam, gdzie wybiera.
+    assert "*TCombobox*Listbox.font" in source, (
+        "czcionka rozwinietej listy profili nie zostala powiekszona")
+
+    # Rozpoznawanie S/N idzie jedna droga we wszystkich ekranach.
+    for name in ("gui.py", "test_screen.py"):
+        module_source = (ROOT / name).read_text(encoding="utf-8")
+        assert "resolve_serial" in module_source, f"{name}: brak resolve_serial"
+    # Mapa HWID zostala usunieta z aplikacji w calosci.
+    assert not (ROOT / "hwid_map.py").exists(), "hwid_map.py wrocil"
+    assert not (ROOT / "hwid_map.json").exists(), "hwid_map.json wrocil"
+    for path in ROOT.glob("*.py"):
+        # release_selftest.py i create_exe.py WYMIENIAJA te nazwy celowo -
+        # pierwszy zeby sprawdzic ich brak, drugi zeby zablokowac build,
+        # gdyby wrocily (REMOVED_MARKERS).
+        if path.name in ("release_selftest.py", "create_exe.py"):
+            continue
+        body = path.read_text(encoding="utf-8")
+        assert "HwidMap" not in body, f"{path.name}: odwolanie do HwidMap"
+        assert "identify_by" not in body, f"{path.name}: pozostalo identify_by"
 
 
 def test_ui_has_no_operator_login() -> None:
@@ -1394,10 +1624,17 @@ def test_ui_has_no_operator_login() -> None:
     assert "_login_operator" not in gui_source
     assert "REQUIRE_OPERATOR_LOGIN" not in gui_source
 
-    for name in ("gui.py", "test_screen.py", "admin_panel.py"):
+    # Stopka zostaje na ekranie startowym i w panelu. Z ekranu TESTOWEGO
+    # zostala usunieta: zabierala 34 px pasowi werdyktu PASS/FAIL, ktory
+    # jest najwazniejsza informacja na tym ekranie.
+    for name in ("gui.py", "admin_panel.py"):
         source = (ROOT / name).read_text(encoding="utf-8")
         assert "Autor: Kacper Urbanowicz" in source, f"{name}: brak autora w stopce"
         assert "footer_left()" in source, f"{name}: stopka nie uzywa footer_left()"
+
+    test_source = (ROOT / "test_screen.py").read_text(encoding="utf-8")
+    assert "Autor: Kacper Urbanowicz" not in test_source, (
+        "stopka wrocila na ekran testowy - zabiera miejsce pasowi werdyktu")
 
     config = DummyConfig()
     assert config.footer_left() == "Reconext Hi-Pot Main Units v1.0.0"
@@ -1564,6 +1801,298 @@ def test_report_failed_step_and_filename() -> None:
         assert len(list(directory.glob("*.txt"))) == 1
 
 
+def test_report_text_injection_blocked() -> None:
+    """K3: pola tekstowe profilu nie moga dopisac wlasnych linii do raportu.
+
+    Raport ma strukture "pole<TAB>wartosc" w osobnych liniach. Znak nowej
+    linii w report_program albo w nazwie kroku pozwalal wstawic wlasna linie
+    "Total result: Pass" PRZED prawdziwym wynikiem - odtworzone przed
+    poprawka na przebiegu zakonczonym FAIL.
+    """
+    from datetime import datetime
+    from safety_rules import validate_report_text
+
+    catalog = ProductCatalog(ROOT / "products")
+    base = catalog.get("SR203_SR204").to_dict()
+
+    poison = "SR203.204\r\nTotal result:\tPass"
+    expect_error(lambda: ProductProfile({**base, "report_program": poison}),
+                 "wstrzykniecie przez report_program")
+    expect_error(lambda: ProductProfile({**base, "display_name": "A\nB"}),
+                 "wstrzykniecie przez display_name")
+    expect_error(
+        lambda: ProductProfile({**base, "steps": [
+            dict(base["steps"][0], name="Ethernet 1\r\nResult:\tPass")]}),
+        "wstrzykniecie przez nazwe kroku")
+
+    # Znaki uzywane w prawdziwych nazwach musza nadal przechodzic.
+    for good in ("SR203.204", "SR203 / SR204", "Ethernet 1", "DSL_2", "ADSL(A)"):
+        assert validate_report_text(good, "test") == good
+
+    for bad in ("", "   ", "A\tB", "A\nB", "A\rB", "A" * 100):
+        expect_error(lambda value=bad: validate_report_text(value, "test"),
+                     f"odrzucenie {bad!r}")
+
+    # Raport zbudowany z poprawnego profilu ma DOKLADNIE jedna linie wyniku.
+    profile = catalog.get("SR203_SR204")
+    lines = build_report_lines(
+        instrument_model="19053",
+        program=profile.report_program,
+        serial="D70021AC017377",
+        overall_result="FAIL",
+        steps=[{"index": 1, "name": profile.steps[0]["name"], "result": "FAIL",
+                "output_voltage": 1060.0, "measured_current": 0.0,
+                "judgment_code": "17"}],
+        profile_steps=[dict(profile.steps[0])],
+        effective_low_ma=[profile.effective_low_ma(profile.steps[0])],
+        now=datetime(2026, 9, 1, 12, 0, 0),
+    )
+    assert sum(1 for line in lines if line.startswith("Total result:")) == 1
+    assert sum(1 for line in lines if line.startswith("Result:")) == 1
+    assert [line for line in lines if line.startswith("Total result:")][0] \
+        .endswith("Fail")
+
+
+def test_profile_integrity_blocks_outside_edits() -> None:
+    """K5: profil zmieniony poza panelem blokuje testowanie."""
+    import profile_integrity as integrity_module
+    from profile_integrity import ProfileIntegrity, verify_profiles
+
+    previous_cwd = os.getcwd()
+    with tempfile.TemporaryDirectory() as folder:
+        try:
+            work = Path(folder)
+            products = work / "products"
+            products.mkdir()
+            source = ROOT / "products" / "SR203_SR204.json"
+            target = products / "SR203_SR204.json"
+            target.write_text(source.read_text(encoding="utf-8"),
+                              encoding="utf-8")
+            os.chdir(work)
+
+            config = DummyConfig()
+            integrity = ProfileIntegrity(config, products)
+
+            # Pierwszy start tworzy manifest lokalny i nie blokuje.
+            integrity.check()
+            assert not integrity.blocked, integrity.summary()
+            assert not integrity.external
+            integrity.check()
+            assert not integrity.blocked
+
+            # Edycja pliku poza panelem MUSI zablokowac testowanie.
+            data = json.loads(target.read_text(encoding="utf-8"))
+            data["steps"][0]["voltage"] = 100
+            target.write_text(json.dumps(data, ensure_ascii=False, indent=2),
+                              encoding="utf-8")
+            integrity.check()
+            assert integrity.blocked, "zmiana profilu nie zostala wykryta"
+            assert "zmieniona poza panelem" in integrity.summary()
+
+            # Dopisany plik profilu tez jest rozbieznoscia.
+            integrity.refresh_after_panel_edit("SR203_SR204")
+            (products / "OBCY.json").write_text(
+                target.read_text(encoding="utf-8"), encoding="utf-8")
+            problems = verify_profiles(products, integrity.path)
+            assert any("spoza manifestu" in p for p in problems), problems
+
+            # Manifest zewnetrzny: jego brak to blad konfiguracji, nie
+            # powod do cichego utworzenia nowego.
+            config.PROFILE_MANIFEST_PATH = str(work / "nie_ma" / "m.json")
+            external = ProfileIntegrity(config, products)
+            assert external.external
+            external.check()
+            assert external.blocked and "Brak manifestu" in (external.error or "")
+        finally:
+            os.chdir(previous_cwd)
+
+
+def test_stop_is_verified_and_not_blocked_by_io_lock() -> None:
+    """K1/K2: STOP wychodzi szybko i jest POTWIERDZANY odczytem z testera."""
+    import hipot_device as device_module
+    from hipot_device import ChromaDevice
+
+    source = (ROOT / "test_screen.py").read_text(encoding="utf-8")
+    assert "request_stop()" in source, (
+        "STOP z watku Tk musi isc przez request_stop")
+    assert "_show_stop_not_confirmed" in source, (
+        "brak reakcji na niepotwierdzone zatrzymanie")
+
+    device = ChromaDevice.__new__(ChromaDevice)
+    device._io_lock = threading.RLock()
+    device._abort_flag = threading.Event()
+    device._rx_buffer = bytearray()
+    device._cycle_active_confirmed = True
+    device._cycle_started_monotonic = 1.0
+    device.dialect = Dialect("19053")
+    device.connected = True
+
+    written: list[str] = []
+    device._write_unlocked = written.append
+
+    # 1. Trwajaca wymiana I/O trzyma _io_lock; STOP musi ja PRZERWAC,
+    #    a nie czekac do konca cyklu ponowien.
+    released = threading.Event()
+    entered = threading.Event()
+
+    def busy_io():
+        with device._io_lock:
+            entered.set()
+            # Petla odczytu sprawdza flage przerwania w kazdym obrocie.
+            for _ in range(100):
+                if device._abort_flag.is_set():
+                    break
+                time.sleep(0.01)
+        released.set()
+
+    worker = threading.Thread(target=busy_io, daemon=True)
+    worker.start()
+    assert entered.wait(1.0)
+
+    started = time.monotonic()
+    sent, message = device.request_stop()
+    waited = time.monotonic() - started
+    assert sent, message
+    assert waited < 0.6, f"STOP czekal {waited:.2f} s na blokade"
+    assert released.wait(1.0)
+    assert written and "STOP" in written[-1].upper()
+    assert not device._abort_flag.is_set(), "flaga przerwania nie zostala zdjeta"
+    assert device._cycle_active_confirmed is False
+
+    # 2. Potwierdzenie: status terminalny albo napiecie ponizej progu.
+    device.get_status = lambda: "STOPPED"
+    device.read_measurements = lambda: None
+    ok, detail = device.confirm_stopped()
+    assert ok, detail
+
+    device.get_status = lambda: "TESTING"
+    device.read_measurements = lambda: {"output_voltage": 12.0}
+    ok, detail = device.confirm_stopped()
+    assert ok and "zgaslo" in detail
+
+    # 3. Tester ciagle w tescie i z napieciem = BRAK potwierdzenia.
+    device.get_status = lambda: "TESTING"
+    device.read_measurements = lambda: {"output_voltage": 1480.0}
+    ok, detail = device.confirm_stopped(attempts=2)
+    assert not ok and "NIE POTWIERDZONO" in detail
+
+
+def test_evidence_ignores_single_transient() -> None:
+    """S3: jedna probka nadmiaru na rampie nie moze uniewaznic PASS-a.
+
+    Prad ladowania pojemnosci wyrobu potrafi chwilowo przekroczyc Max Limit
+    w chwili dojscia rampy do napiecia docelowego. Chroma to widzi i orzeka
+    PASS - aplikacja odrzucala poprawny wynik i blokowala stanowisko.
+    """
+    from test_screen import StepEvidence
+
+    single = StepEvidence()
+    for over in (True, False, True, False, True):
+        single.note_overcurrent(over)
+    assert not single.overcurrent_seen, "pojedyncze transienty odrzucily PASS"
+
+    real = StepEvidence()
+    for over in (False, True, True, True):
+        real.note_overcurrent(over)
+    assert real.overcurrent_seen, "rzeczywiste przekroczenie nie zostalo wykryte"
+
+
+def test_builder_guards_catch_real_damage() -> None:
+    """Kontrole buildera musza zatrzymac REALNE uszkodzenie, nie tylko literowke.
+
+    Sonda z 18.09.2026 pokazala dwie dziury we wlasnych kontrolach:
+    marker ``_abort_flag`` przechodzil po przemianowaniu na
+    ``_abort_flag_off`` (bo byl PREFIKSEM), a jawne haslo sklejone
+    z przylegajacych literalow nie bylo wykrywane, bo szukalo go tylko
+    jako podciagu tekstu zrodlowego. Test pilnuje obu poprawek.
+    """
+    import create_exe as builder
+
+    # Pliki muszą przechodzić w stanie niezmienionym.
+    for name in builder.PROJECT_FILES:
+        builder.validate_source_file(name, ROOT / name)
+
+    previous_cwd = os.getcwd()
+    with tempfile.TemporaryDirectory() as folder:
+        work = Path(folder)
+        for name in builder.PROJECT_FILES:
+            (work / name).write_text((ROOT / name).read_text(encoding="utf-8"),
+                                     encoding="utf-8")
+        try:
+            os.chdir(work)
+
+            def blocked(name, mutate) -> bool:
+                path = work / name
+                original = path.read_text(encoding="utf-8")
+                path.write_text(mutate(original), encoding="utf-8")
+                try:
+                    builder.validate_source_file(name, path)
+                    return False
+                except builder.BuildError:
+                    return True
+                finally:
+                    path.write_text(original, encoding="utf-8")
+
+            must_block = [
+                ("wyciecie weryfikacji STOP", "hipot_device.py",
+                 lambda s: s.replace("def confirm_stopped", "def _off")),
+                # PREFIKS: samo przemianowanie nie moze przejsc.
+                ("przemianowanie flagi przerwania I/O", "hipot_device.py",
+                 lambda s: s.replace("self._abort_flag.set()",
+                                     "self._abort_flag_off.set()")),
+                ("wyciecie bramki czasu cyklu", "hipot_device.py",
+                 lambda s: s.replace("def cycle_started_monotonic", "def _off")),
+                ("wyciecie sanityzacji raportu", "safety_rules.py",
+                 lambda s: s.replace("def validate_report_text", "def _off")),
+                ("wyciecie kontroli sum profili", "profile_integrity.py",
+                 lambda s: s.replace("def verify_profiles", "def _off")),
+                ("powrot mapy HWID", "gui.py",
+                 lambda s: s + "\nfrom hwid_map import HwidMap\n"),
+                ("powrot logowania operatora", "gui.py",
+                 lambda s: s + "\ndef _login_operator(): pass\n"),
+                ("wyciecie zerowania widgetow", "gui.py",
+                 lambda s: s.replace("_clear_screen_widgets", "_off")),
+                # Trzy zapisy tego samego hasla - wszystkie musza odpasc.
+                ("jawne haslo: literal", "gui.py",
+                 lambda s: s + '\nP = "recon"+"ext2026"\n'),
+                ("jawne haslo: literaly przylegajace", "gui.py",
+                 lambda s: s + '\nP = "recon" "ext2026"\n'),
+                ("jawne haslo: sklejone plusem", "gui.py",
+                 lambda s: s + '\nP = "reco" + "nex" + "t2026"\n'),
+            ]
+            for label, name, mutate in must_block:
+                assert blocked(name, mutate), f"build przeszedl mimo: {label}"
+
+            # Zmiany kosmetyczne NIE moga blokowac wydania - inaczej kontrola
+            # zostanie obejsciem przez zatwierdzanie wszystkiego.
+            must_pass = [
+                ("zmiana tekstu komunikatu", "gui.py",
+                 lambda s: s.replace("Zeskanuj numer seryjny", "Skanuj numer")),
+                ("zmiana koloru", "station_config.py",
+                 lambda s: s.replace("#E3F2FD", "#E1F5FE")),
+            ]
+            for label, name, mutate in must_pass:
+                assert not blocked(name, mutate), (
+                    f"kontrola blokuje zmiane kosmetyczna: {label}")
+        finally:
+            os.chdir(previous_cwd)
+
+    # Manifest sum profili MUSI trafic obok EXE - bez niego aplikacja
+    # zatwierdza przy pierwszym uruchomieniu to, co akurat lezy w products.
+    assert "profiles_manifest.json" in builder.OPTIONAL_DATA_FILES, (
+        "manifest sum profili nie jest kopiowany obok EXE")
+    builder_source = (ROOT / "create_exe.py").read_text(encoding="utf-8")
+    assert "EDITABLE_DATA_FILES + OPTIONAL_DATA_FILES" in builder_source, (
+        "copy_editable_files nie kopiuje plikow opcjonalnych")
+
+    # Kazdy plik produkcyjny ma byc czyms pilnowany.
+    unguarded = [name for name in builder.PROJECT_FILES
+                 if name not in builder.REQUIRED_SAFETY_MARKERS]
+    # main.py to bootstrap, station_config.py to same wartosci domyslne -
+    # nadpisywane przez station_config.json i pilnowane w settings_manager.
+    assert unguarded == ["main.py", "station_config.py"], unguarded
+
+
 def test_transport_limits() -> None:
     """Manual rozdz. 6.2: RS232 konczy sie na 19200 bodach, bez RTS/CTS."""
     from safety_rules import validate_rs232_settings
@@ -1582,8 +2111,7 @@ def test_transport_limits() -> None:
     expect_error(lambda: validate_rs232_settings("", 9600), "pusty port COM")
 
 
-def test_station_config_and_hwid_map() -> None:
-    import hwid_map as hwid_module
+def test_station_config() -> None:
 
     previous_cwd = os.getcwd()
     with tempfile.TemporaryDirectory() as temp:
@@ -1627,56 +2155,7 @@ def test_station_config_and_hwid_map() -> None:
                                                    encoding="utf-8")
             expect_error(lambda: SettingsManager().load_config(DummyConfig()),
                          "konfiguracja z nowszej wersji aplikacji")
-
-            # Mapa HWID: format, walidacja i cache.
-            expect_error(
-                lambda: SettingsManager().save_hwid_map({"ABC12": {
-                    "product": "SR203_SR204", "model": "X"}}),
-                "HWID o zlej dlugosci")
-            expect_error(
-                lambda: SettingsManager().save_hwid_map({"ABC123": "tylko_model"}),
-                "wpis bez identyfikatora produktu")
-
-            # Brak PLIKU mapy nadal jest bledem konfiguracji.
-            hwid_module.invalidate_cache()
-            expect_error(lambda: SettingsManager().load_hwid_map(),
-                         "brak pliku hwid_map.json")
-
-            # Pusty PLIK mapy jest DOPUSZCZALNY - profile z identify_by
-            # "operator" (SR203_SR204) w ogole jej nie uzywaja.
-            SettingsManager().save_hwid_map({})
-            hwid_module.invalidate_cache()
-            assert SettingsManager().load_hwid_map() == {}
-            assert hwid_module.HwidMap(
-                ProductCatalog(ROOT / "products")).get_entry(
-                    "D21022AD023966") is None
-
-            SettingsManager().save_hwid_map({
-                "SR2030": "sr203_sr204:SR203",
-            })
-            loaded = SettingsManager().load_hwid_map()
-            # Male litery w recznie edytowanym pliku sa normalizowane.
-            assert loaded["SR2030"] == {"product": "SR203_SR204",
-                                        "model": "SR203"}
-
-            reads = {"count": 0}
-            original = SettingsManager.load_hwid_map
-
-            def counting(self):
-                reads["count"] += 1
-                return original(self)
-
-            hwid_module.invalidate_cache()
-            catalog = ProductCatalog(ROOT / "products")
-            with patch.object(SettingsManager, "load_hwid_map", counting):
-                for _ in range(5):
-                    ok, scan = hwid_module.HwidMap(catalog).resolve(
-                        "SR203012345678")
-                    assert ok and scan.product_id == "SR203_SR204"
-                assert reads["count"] == 1, (
-                    f"mapa odczytana {reads['count']} razy zamiast raz")
         finally:
-            hwid_module.invalidate_cache()
             os.chdir(previous_cwd)
 
 
@@ -1770,18 +2249,25 @@ def main() -> None:
         test_fresh_cycle_guard,
         test_interlock_regressions,
         test_interlock_state_machine,
-        test_product_mismatch_blocks_next_serial,
+        test_next_serial_keeps_station_profile,
         test_enabled_products_gate,
         test_profile_step_reordering,
-        test_next_serial_dialog_uses_profile_rules,
         test_read_program_matches_station_readout,
-        test_operator_identified_profile_scan,
+        test_admin_panel_tabs,
+        test_recovery_after_abort,
+        test_scan_screen_survives_rebuild,
+        test_profile_choice_is_explicit,
         test_start_screen_profile_list,
         test_ui_has_no_operator_login,
         test_report_matches_station_format,
         test_report_failed_step_and_filename,
+        test_report_text_injection_blocked,
+        test_profile_integrity_blocks_outside_edits,
+        test_stop_is_verified_and_not_blocked_by_io_lock,
+        test_evidence_ignores_single_transient,
+        test_builder_guards_catch_real_damage,
         test_transport_limits,
-        test_station_config_and_hwid_map,
+        test_station_config,
         test_admin_access_control,
         test_runtime_logging_windowed,
     ]

@@ -1,0 +1,203 @@
+
+[10:49:33.555865][OUT] ========================================================================
+[10:49:33.556264][OUT] [RUNTIME] Start sesji: 2026-09-17T10:49:33+02:00
+[10:49:33.556316][OUT] [RUNTIME] PID: 14272
+[10:49:33.556366][OUT] [RUNTIME] Python: 3.13.3 | frozen=False
+[10:49:33.556406][OUT] [RUNTIME] Log: C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\app_runtime_logs\hipot_20260917.log
+[10:49:33.556443][OUT] ========================================================================
+[10:49:33.777480][OUT] [RUNTIME] Reconext Hi-Pot Main Units 1.0.0
+[10:49:33.777859][OUT] [RUNTIME] Diagnostyka sesji: C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\app_runtime_logs\hipot_20260917.log
+[10:49:34.412165][OUT] [RUNTIME] Stanowisko: HIPOT-SR203-01 | Chroma 19053 na COM2 @19200 | interlock COM11
+[10:49:34.412337][OUT] [RUNTIME] Profile: ER115, SE210, SR203_SR204, SR213
+[10:49:42.619791][OUT] [AUDIT] PANEL/WEJSCIE
+
+[10:51:41.201693][OUT] ========================================================================
+[10:51:41.201913][OUT] [RUNTIME] Start sesji: 2026-09-17T10:51:41+02:00
+[10:51:41.201952][OUT] [RUNTIME] PID: 58420
+[10:51:41.201992][OUT] [RUNTIME] Python: 3.13.3 | frozen=False
+[10:51:41.202025][OUT] [RUNTIME] Log: C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\app_runtime_logs\hipot_20260917.log
+[10:51:41.202065][OUT] ========================================================================
+[10:51:41.394327][OUT] [RUNTIME] Reconext Hi-Pot Main Units 1.0.0
+[10:51:41.394400][OUT] [RUNTIME] Diagnostyka sesji: C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\app_runtime_logs\hipot_20260917.log
+[10:51:41.672541][OUT] [RUNTIME] Stanowisko: HIPOT-SR203-01 | Chroma 19053 na COM2 @19200 | interlock COM11
+[10:51:41.672654][OUT] [RUNTIME] Profile: ER115, SE210, SR203_SR204, SR213
+
+[10:52:40.617207][OUT] ========================================================================
+[10:52:40.617459][OUT] [RUNTIME] Start sesji: 2026-09-17T10:52:40+02:00
+[10:52:40.617507][OUT] [RUNTIME] PID: 51036
+[10:52:40.617564][OUT] [RUNTIME] Python: 3.13.3 | frozen=False
+[10:52:40.617604][OUT] [RUNTIME] Log: C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\app_runtime_logs\hipot_20260917.log
+[10:52:40.617638][OUT] ========================================================================
+[10:52:40.802909][OUT] [RUNTIME] Reconext Hi-Pot Main Units 1.0.0
+[10:52:40.802980][OUT] [RUNTIME] Diagnostyka sesji: C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\app_runtime_logs\hipot_20260917.log
+[10:52:41.100840][OUT] [RUNTIME] Stanowisko: HIPOT-SR203-01 | Chroma 19053 na COM2 @19200 | interlock COM11
+[10:52:41.100958][OUT] [RUNTIME] Profile: ER115, SE210, SR203_SR204, SR213
+[10:52:49.001985][OUT] [AUDIT] PANEL/BLEDNE_HASLO pozostalo prob: 2
+[10:52:51.496218][OUT] [AUDIT] PANEL/WEJSCIE
+[10:52:57.484470][OUT] [POLACZENIE] Blad: could not open port 'COM2': FileNotFoundError(2, 'Nie można odnaleźć określonego pliku.', None, 2)
+
+[12:15:16.027321][OUT] ========================================================================
+[12:15:16.027709][OUT] [RUNTIME] Start sesji: 2026-09-17T12:15:16+02:00
+[12:15:16.027796][OUT] [RUNTIME] PID: 66380
+[12:15:16.027881][OUT] [RUNTIME] Python: 3.13.3 | frozen=False
+[12:15:16.027948][OUT] [RUNTIME] Log: C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\app_runtime_logs\hipot_20260917.log
+[12:15:16.028013][OUT] ========================================================================
+[12:15:16.457836][OUT] [RUNTIME] Reconext Hi-Pot Main Units 1.0.0
+[12:15:16.458045][OUT] [RUNTIME] Diagnostyka sesji: C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\app_runtime_logs\hipot_20260917.log
+[12:15:16.505577][OUT] [RUNTIME] Stanowisko: HIPOT-SR203-01 | Chroma 19053 na COM2 @19200 | interlock COM11
+[12:15:16.505825][OUT] [RUNTIME] Profile: ER115, SE210, SR203_SR204, SR213
+[12:15:21.846168][OUT] [AUDIT] PANEL/WEJSCIE
+[12:15:47.194914][OUT] [AUDIT] ZMIANA/STANOWISKO PORT: 'COM2' -> 'COM17'
+[12:15:53.120077][OUT] [AUDIT] ZMIANA/INTERLOCK PORT: 'COM11' -> 'COM18'
+[12:16:04.997091][OUT] [IDN] Brak odpowiedzi na *IDN?
+[12:16:18.055953][OUT] [IDN] Brak odpowiedzi na *IDN?
+[12:16:21.732997][OUT] [AUDIT] ZMIANA/STANOWISKO BAUD: 19200 -> 9600
+[12:16:24.160777][OUT] [IDN] Polaczono z: Chroma,19053,190530006638,5.14
+[12:16:24.454457][OUT] [KEYLOCK] ERR='+0,"No error"', STATE='1'
+[12:17:20.982765][OUT] [IDN] Polaczono z: Chroma,19053,190530006638,5.14
+[12:17:21.276137][OUT] [KEYLOCK] ERR='+0,"No error"', STATE='1'
+[12:17:22.919615][OUT] [CONFIG] Czestotliwosc AC potwierdzona: 60 Hz
+[12:17:22.919877][OUT] [CONFIG] Krok 1 (Ethernet 1): 1060 V, LOW 0.200 mA, HIGH 1.000 mA
+[12:17:25.018744][OUT] [CONFIG] Krok 1: kanaly HIGH=[1] LOW=- (maska HOOOOOOO)
+[12:17:25.282714][OUT] [VERIFY] Krok 1: maska kanalow potwierdzona HOOOOOOO
+[12:17:25.283247][OUT] [VERIFY] Krok 1 potwierdzony odczytem zwrotnym
+[12:17:25.283538][OUT] [CONFIG] Krok 2 (Ethernet 2): 1060 V, LOW 0.200 mA, HIGH 1.000 mA
+[12:17:27.383898][OUT] [CONFIG] Krok 2: kanaly HIGH=[2] LOW=- (maska OHOOOOOO)
+[12:17:27.647799][OUT] [VERIFY] Krok 2: maska kanalow potwierdzona OHOOOOOO
+[12:17:27.648146][OUT] [VERIFY] Krok 2 potwierdzony odczytem zwrotnym
+[12:17:27.648364][OUT] [CONFIG] Krok 3 (Ethernet 3): 1060 V, LOW 0.200 mA, HIGH 1.000 mA
+[12:17:29.758772][OUT] [CONFIG] Krok 3: kanaly HIGH=[3] LOW=- (maska OOHOOOOO)
+[12:17:30.022960][OUT] [VERIFY] Krok 3: maska kanalow potwierdzona OOHOOOOO
+[12:17:30.023346][OUT] [VERIFY] Krok 3 potwierdzony odczytem zwrotnym
+[12:17:30.023556][OUT] [CONFIG] Krok 4 (Ethernet 4): 1060 V, LOW 0.200 mA, HIGH 1.000 mA
+[12:17:32.135944][OUT] [CONFIG] Krok 4: kanaly HIGH=[4] LOW=- (maska OOOHOOOO)
+[12:17:32.400133][OUT] [VERIFY] Krok 4: maska kanalow potwierdzona OOOHOOOO
+[12:17:32.400523][OUT] [VERIFY] Krok 4 potwierdzony odczytem zwrotnym
+[12:17:32.400735][OUT] [CONFIG] Krok 5 (Modem): 1500 V, LOW 0.050 mA, HIGH 1.000 mA
+[12:17:34.515585][OUT] [CONFIG] Krok 5: kanaly HIGH=[5] LOW=- (maska OOOOHOOO)
+[12:17:34.780282][OUT] [VERIFY] Krok 5: maska kanalow potwierdzona OOOOHOOO
+[12:17:34.780600][OUT] [VERIFY] Krok 5 potwierdzony odczytem zwrotnym
+[12:17:34.813610][OUT] [CONFIG] Zaprogramowano 5 krokow profilu SR203 / SR204
+[12:17:35.402799][OUT] [SAMPLING] Zmierzony cykl odpytania: 196 ms -> ~5.1 próbek na krok (dwell 1.00 s, wymagane 2)
+[12:17:36.984759][OUT] [INTERLOCK] Połączono: COM18 @ 9600
+[12:17:37.081680][OUT] [INTERLOCK] Zmiana stanu: 'OPEN'
+[12:17:42.851022][OUT] [INTERLOCK] Zmiana stanu: 'CLOSED'
+[12:17:43.952619][OUT] [START] ERR='+0,"No error"', KLOC='1'
+[12:17:44.168645][OUT] [START] Potwierdzono nowy cykl #1
+[12:17:57.392164][OUT] [WYNIK] Krok 1 (Ethernet 1): PASS kod=116 1060 V 0.3430 mA
+[12:17:57.392317][OUT] [WYNIK] Krok 2 (Ethernet 2): PASS kod=116 1062 V 0.3610 mA
+[12:17:57.392368][OUT] [WYNIK] Krok 3 (Ethernet 3): PASS kod=116 1060 V 0.3650 mA
+[12:17:57.392416][OUT] [WYNIK] Krok 4 (Ethernet 4): PASS kod=116 1062 V 0.3490 mA
+[12:17:57.392463][OUT] [WYNIK] Krok 5 (Modem): PASS kod=116 1500 V 0.1250 mA
+[12:17:57.392537][OUT] [DOWODY] Krok 1 (Ethernet 1): próbek 2, w zakresie 2, max 1060 V / 0.345 mA  ⚠ ZAPAS 0 nad wymaganym minimum 2 - jedno zgubione FETCh odrzuci poprawny PASS
+[12:17:57.392612][OUT] [DOWODY] Krok 2 (Ethernet 2): próbek 5, w zakresie 2, max 1060 V / 0.361 mA  ⚠ ZAPAS 0 nad wymaganym minimum 2 - jedno zgubione FETCh odrzuci poprawny PASS
+[12:17:57.392670][OUT] [DOWODY] Krok 3 (Ethernet 3): próbek 5, w zakresie 2, max 1060 V / 0.367 mA  ⚠ ZAPAS 0 nad wymaganym minimum 2 - jedno zgubione FETCh odrzuci poprawny PASS
+[12:17:57.392722][OUT] [DOWODY] Krok 4 (Ethernet 4): próbek 5, w zakresie 2, max 1062 V / 0.349 mA  ⚠ ZAPAS 0 nad wymaganym minimum 2 - jedno zgubione FETCh odrzuci poprawny PASS
+[12:17:57.392772][OUT] [DOWODY] Krok 5 (Modem): próbek 5, w zakresie 2, max 1500 V / 0.123 mA  ⚠ ZAPAS 0 nad wymaganym minimum 2 - jedno zgubione FETCh odrzuci poprawny PASS
+[12:18:02.597001][OUT] [LOG] Sciezka podstawowa niedostepna: \\IFS\hipot_logs\SR203 ([WinError 53] Nie można odnaleźć ścieżki sieciowej: '\\\\IFS\\hipot_logs\\')
+[12:18:02.602242][OUT] [LOG] Zapis awaryjny: C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\logs_pending\D210224D015282.txt
+[12:18:28.238994][OUT] [INTERLOCK] Zmiana stanu: 'OPEN'
+[12:18:53.385161][OUT] [INTERLOCK] Zmiana stanu: 'CLOSED'
+[12:18:55.750186][OUT] [INTERLOCK] Zmiana stanu: 'OPEN'
+[12:18:57.070294][OUT] [INTERLOCK] Zmiana stanu: 'CLOSED'
+[12:18:58.255064][OUT] [START] ERR='+0,"No error"', KLOC='1'
+[12:18:58.471113][OUT] [START] Potwierdzono nowy cykl #2
+[12:19:11.738339][OUT] [WYNIK] Krok 1 (Ethernet 1): PASS kod=116 1060 V 0.3430 mA
+[12:19:11.738544][OUT] [WYNIK] Krok 2 (Ethernet 2): PASS kod=116 1060 V 0.3590 mA
+[12:19:11.738628][OUT] [WYNIK] Krok 3 (Ethernet 3): PASS kod=116 1060 V 0.3650 mA
+[12:19:11.738703][OUT] [WYNIK] Krok 4 (Ethernet 4): PASS kod=116 1058 V 0.3470 mA
+[12:19:11.738777][OUT] [WYNIK] Krok 5 (Modem): PASS kod=116 1500 V 0.1230 mA
+[12:19:11.738878][OUT] [DOWODY] Krok 1 (Ethernet 1): próbek 2, w zakresie 2, max 1060 V / 0.343 mA  ⚠ ZAPAS 0 nad wymaganym minimum 2 - jedno zgubione FETCh odrzuci poprawny PASS
+[12:19:11.738978][OUT] [DOWODY] Krok 2 (Ethernet 2): próbek 5, w zakresie 2, max 1060 V / 0.361 mA  ⚠ ZAPAS 0 nad wymaganym minimum 2 - jedno zgubione FETCh odrzuci poprawny PASS
+[12:19:11.739061][OUT] [DOWODY] Krok 3 (Ethernet 3): próbek 4, w zakresie 2, max 1060 V / 0.365 mA  ⚠ ZAPAS 0 nad wymaganym minimum 2 - jedno zgubione FETCh odrzuci poprawny PASS
+[12:19:11.739143][OUT] [DOWODY] Krok 4 (Ethernet 4): próbek 5, w zakresie 2, max 1058 V / 0.347 mA  ⚠ ZAPAS 0 nad wymaganym minimum 2 - jedno zgubione FETCh odrzuci poprawny PASS
+[12:19:11.739224][OUT] [DOWODY] Krok 5 (Modem): próbek 4, w zakresie 2, max 1500 V / 0.125 mA  ⚠ ZAPAS 0 nad wymaganym minimum 2 - jedno zgubione FETCh odrzuci poprawny PASS
+[12:19:16.915217][OUT] [LOG] Sciezka podstawowa niedostepna: \\IFS\hipot_logs\SR203 ([WinError 53] Nie można odnaleźć ścieżki sieciowej: '\\\\IFS\\hipot_logs\\')
+[12:19:16.957699][OUT] [LOG] Zapis awaryjny: C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\logs_pending\D210224D015282.txt
+[12:19:17.009645][OUT] [INTERLOCK] Zmiana stanu: 'OPEN'
+[12:20:00.270241][OUT] [INTERLOCK] Zmiana stanu: 'CLOSED'
+[12:20:01.394466][OUT] [START] ERR='+0,"No error"', KLOC='1'
+[12:20:01.588884][OUT] [START] Potwierdzono nowy cykl #3
+[12:20:04.191146][OUT] [INTERLOCK] Zmiana stanu: 'OPEN'
+[12:20:04.373112][OUT] [PRZEBIEG] PRZERWANY | S/N D210224D015281 | Test przerwany
+[12:20:04.374922][OUT] [AUDIT] TEST/PRZERWANY S/N D210224D015281, profil SR203_SR204: Test przerwany
+[12:20:04.461677][OUT] [STOP] Tester potwierdzil zatrzymanie (status STOPPED)
+[12:20:24.005508][OUT] [INTERLOCK] Rozłączono
+[12:20:29.924520][OUT] [IDN] Polaczono z: Chroma,19053,190530006638,5.14
+[12:20:30.217336][OUT] [KEYLOCK] ERR='+0,"No error"', STATE='1'
+[12:20:31.639348][OUT] [CONFIG] Czestotliwosc AC potwierdzona: 60 Hz
+[12:20:31.639553][OUT] [CONFIG] Krok 1 (Ethernet 1): 1060 V, LOW 0.200 mA, HIGH 1.000 mA
+[12:20:33.735167][OUT] [CONFIG] Krok 1: kanaly HIGH=[1] LOW=- (maska HOOOOOOO)
+[12:20:33.998763][OUT] [VERIFY] Krok 1: maska kanalow potwierdzona HOOOOOOO
+[12:20:33.998942][OUT] [VERIFY] Krok 1 potwierdzony odczytem zwrotnym
+[12:20:33.999019][OUT] [CONFIG] Krok 2 (Ethernet 2): 1060 V, LOW 0.200 mA, HIGH 1.000 mA
+[12:20:36.092381][OUT] [CONFIG] Krok 2: kanaly HIGH=[2] LOW=- (maska OHOOOOOO)
+[12:20:36.355982][OUT] [VERIFY] Krok 2: maska kanalow potwierdzona OHOOOOOO
+[12:20:36.356362][OUT] [VERIFY] Krok 2 potwierdzony odczytem zwrotnym
+[12:20:36.356494][OUT] [CONFIG] Krok 3 (Ethernet 3): 1060 V, LOW 0.200 mA, HIGH 1.000 mA
+[12:20:38.452750][OUT] [CONFIG] Krok 3: kanaly HIGH=[3] LOW=- (maska OOHOOOOO)
+[12:20:38.716677][OUT] [VERIFY] Krok 3: maska kanalow potwierdzona OOHOOOOO
+[12:20:38.716985][OUT] [VERIFY] Krok 3 potwierdzony odczytem zwrotnym
+[12:20:38.717125][OUT] [CONFIG] Krok 4 (Ethernet 4): 1060 V, LOW 0.200 mA, HIGH 1.000 mA
+[12:20:40.814810][OUT] [CONFIG] Krok 4: kanaly HIGH=[4] LOW=- (maska OOOHOOOO)
+[12:20:41.078396][OUT] [VERIFY] Krok 4: maska kanalow potwierdzona OOOHOOOO
+[12:20:41.078543][OUT] [VERIFY] Krok 4 potwierdzony odczytem zwrotnym
+[12:20:41.078599][OUT] [CONFIG] Krok 5 (Modem): 1500 V, LOW 0.050 mA, HIGH 1.000 mA
+[12:20:43.176190][OUT] [CONFIG] Krok 5: kanaly HIGH=[5] LOW=- (maska OOOOHOOO)
+[12:20:43.440168][OUT] [VERIFY] Krok 5: maska kanalow potwierdzona OOOOHOOO
+[12:20:43.440366][OUT] [VERIFY] Krok 5 potwierdzony odczytem zwrotnym
+[12:20:43.473074][OUT] [CONFIG] Zaprogramowano 5 krokow profilu SR203 / SR204
+[12:20:44.058436][OUT] [SAMPLING] Zmierzony cykl odpytania: 195 ms -> ~5.1 próbek na krok (dwell 1.00 s, wymagane 2)
+[12:20:45.578659][OUT] [INTERLOCK] Połączono: COM18 @ 9600
+[12:20:45.638854][OUT] [INTERLOCK] Zmiana stanu: 'OPEN'
+[12:20:47.890027][OUT] [INTERLOCK] Zmiana stanu: 'CLOSED'
+[12:20:48.944365][OUT] [START] ERR='+0,"No error"', KLOC='1'
+[12:20:49.160438][OUT] [START] Potwierdzono nowy cykl #1
+[12:21:02.259043][OUT] [WYNIK] Krok 1 (Ethernet 1): PASS kod=116 1062 V 0.3410 mA
+[12:21:02.259239][OUT] [WYNIK] Krok 2 (Ethernet 2): PASS kod=116 1062 V 0.3590 mA
+[12:21:02.259303][OUT] [WYNIK] Krok 3 (Ethernet 3): PASS kod=116 1060 V 0.3630 mA
+[12:21:02.259360][OUT] [WYNIK] Krok 4 (Ethernet 4): PASS kod=116 1058 V 0.3470 mA
+[12:21:02.259423][OUT] [WYNIK] Krok 5 (Modem): PASS kod=116 1500 V 0.1230 mA
+[12:21:02.259499][OUT] [DOWODY] Krok 1 (Ethernet 1): próbek 2, w zakresie 2, max 1062 V / 0.341 mA  ⚠ ZAPAS 0 nad wymaganym minimum 2 - jedno zgubione FETCh odrzuci poprawny PASS
+[12:21:02.259578][OUT] [DOWODY] Krok 2 (Ethernet 2): próbek 5, w zakresie 2, max 1060 V / 0.359 mA  ⚠ ZAPAS 0 nad wymaganym minimum 2 - jedno zgubione FETCh odrzuci poprawny PASS
+[12:21:02.259643][OUT] [DOWODY] Krok 3 (Ethernet 3): próbek 5, w zakresie 2, max 1060 V / 0.365 mA  ⚠ ZAPAS 0 nad wymaganym minimum 2 - jedno zgubione FETCh odrzuci poprawny PASS
+[12:21:02.259704][OUT] [DOWODY] Krok 4 (Ethernet 4): próbek 4, w zakresie 2, max 1062 V / 0.347 mA  ⚠ ZAPAS 0 nad wymaganym minimum 2 - jedno zgubione FETCh odrzuci poprawny PASS
+[12:21:02.259765][OUT] [DOWODY] Krok 5 (Modem): próbek 5, w zakresie 2, max 1502 V / 0.123 mA  ⚠ ZAPAS 0 nad wymaganym minimum 2 - jedno zgubione FETCh odrzuci poprawny PASS
+[12:21:04.231167][OUT] [INTERLOCK] Zmiana stanu: 'OPEN'
+[12:21:07.469658][OUT] [LOG] Sciezka podstawowa niedostepna: \\IFS\hipot_logs\SR203 ([WinError 53] Nie można odnaleźć ścieżki sieciowej: '\\\\IFS\\hipot_logs\\')
+[12:21:07.513247][OUT] [LOG] Zapis awaryjny: C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\logs_pending\D210224D015289.txt
+[13:08:29.791460][OUT] [INTERLOCK] Błąd pętli (1): ClearCommError failed (PermissionError(13, 'Urządzenie nie rozpoznaje polecenia.', None, 22))
+[13:08:30.292904][OUT] [INTERLOCK] Błąd pętli (2): ClearCommError failed (PermissionError(13, 'Urządzenie nie rozpoznaje polecenia.', None, 22))
+[13:08:30.793971][OUT] [INTERLOCK] Błąd pętli (3): ClearCommError failed (PermissionError(13, 'Urządzenie nie rozpoznaje polecenia.', None, 22))
+[13:08:31.295281][OUT] [INTERLOCK] Błąd pętli (4): ClearCommError failed (PermissionError(13, 'Urządzenie nie rozpoznaje polecenia.', None, 22))
+[13:08:31.796451][OUT] [INTERLOCK] Błąd pętli (5): ClearCommError failed (PermissionError(13, 'Urządzenie nie rozpoznaje polecenia.', None, 22))
+[13:08:31.797069][OUT] [INTERLOCK] Utrata komunikacji: 5 kolejnych błędów portu
+[13:27:16.787577][OUT] [STOP] Nie udalo sie wyslac STOP: WriteFile failed (PermissionError(13, 'Urządzenie nie rozpoznaje polecenia.', None, 22))
+[13:27:16.787705][OUT] [INTERLOCK] Rozłączono
+[13:27:22.220894][OUT] [AUDIT] PANEL/WEJSCIE
+[13:57:04.561179][ERR] Traceback (most recent call last):
+[13:57:04.565650][ERR]   File "C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\main.py", line 178, in <module>
+[13:57:04.565650][ERR]     raise SystemExit(main())
+[13:57:04.565650][ERR]                      ~~~~^^
+[13:57:04.565708][ERR]   File "C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\main.py", line 173, in main
+[13:57:04.565708][ERR]     root.mainloop()
+[13:57:04.565708][ERR]     ~~~~~~~~~~~~~^^
+[13:57:04.565775][ERR]   File "C:\Users\kacper.urbanowicz\AppData\Local\Programs\Python\Python313\Lib\tkinter\__init__.py", line 1599, in mainloop
+[13:57:04.565775][ERR]     self.tk.mainloop(n)
+[13:57:04.565775][ERR]     ~~~~~~~~~~~~~~~~^^^
+[13:57:04.565795][ERR]   File "C:\Users\kacper.urbanowicz\AppData\Local\Programs\Python\Python313\Lib\tkinter\__init__.py", line 2063, in __call__
+[13:57:04.565795][ERR]     def __call__(self, *args):
+[13:57:04.565795][ERR]     
+[13:57:04.565839][ERR] KeyboardInterrupt
+
+[13:57:04.911319][OUT] ========================================================================
+[13:57:04.911483][OUT] [RUNTIME] Start sesji: 2026-09-17T13:57:04+02:00
+[13:57:04.911518][OUT] [RUNTIME] PID: 118088
+[13:57:04.911549][OUT] [RUNTIME] Python: 3.13.3 | frozen=False
+[13:57:04.911576][OUT] [RUNTIME] Log: C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\app_runtime_logs\hipot_20260917.log
+[13:57:04.911603][OUT] ========================================================================
+[13:57:05.212156][OUT] [RUNTIME] Reconext Hi-Pot Main Units 1.0.0
+[13:57:05.212367][OUT] [RUNTIME] Diagnostyka sesji: C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\app_runtime_logs\hipot_20260917.log
+[13:57:05.250545][OUT] [RUNTIME] Stanowisko: HIPOT-SR203-01 | Chroma 19053 na COM2 @19200 | interlock COM11
+[13:57:05.250655][OUT] [RUNTIME] Profile: ER115, SE210, SR203_SR204, SR213
+[13:57:15.976912][OUT] [AUDIT] PANEL/WEJSCIE

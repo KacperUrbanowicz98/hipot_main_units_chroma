@@ -153,9 +153,27 @@ def configure_runtime_logging(app_dir: str | os.PathLike[str]) -> Optional[Path]
             _remove_old_logs(log_dir)
             log_path = log_dir / f"hipot_{datetime.now():%Y%m%d}.log"
             logfile = log_path.open("a", encoding="utf-8", buffering=1)
-        except OSError:
-            _install_devnull_streams()
-            return None
+        except OSError as primary_error:
+            # S7: cicha ucieczka w os.devnull zabierala CALA diagnostyke
+            # i nikt sie o tym nie dowiadywal. Probujemy jeszcze katalogu
+            # uzytkownika, a gdy i to zawiedzie - mowimy o tym glosno.
+            fallback = Path(
+                os.environ.get("LOCALAPPDATA")
+                or os.environ.get("XDG_CACHE_HOME")
+                or Path.home()
+            ) / "ReconextHiPot" / _LOG_DIR_NAME
+            try:
+                fallback.mkdir(parents=True, exist_ok=True)
+                log_path = fallback / f"hipot_{datetime.now():%Y%m%d}.log"
+                logfile = log_path.open("a", encoding="utf-8", buffering=1)
+                print(f"[RUNTIME] Brak zapisu do {log_dir} ({primary_error}) - "
+                      f"log sesji trafia do {log_path}", file=sys.stderr)
+            except OSError as fallback_error:
+                _install_devnull_streams()
+                _STATE = None
+                print(f"[RUNTIME] BRAK LOGU SESJI: {primary_error} / "
+                      f"{fallback_error}", file=sys.__stderr__)
+                return None
 
         state = _RuntimeLogState(sys.stdout, sys.stderr, logfile, log_path)
         _STATE = state

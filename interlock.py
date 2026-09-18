@@ -22,6 +22,15 @@ class InterlockMonitor:
     CLOSED_SIGNALS = {"CLOSED"}
     OPEN_SIGNALS = {"OPEN"}
 
+    # Podpis stanowiska. Szkic wysyla go raz na sekunde jako "ID:<podpis>".
+    # Sam protokol OPEN/CLOSED nie odroznia plyty interlocka od dowolnego
+    # innego urzadzenia na porcie szeregowym - podstawienie com0com
+    # i piecioliniowego skryptu spelnialo nawet wymog przejscia OPEN->CLOSED.
+    # Podpis nie jest zabezpieczeniem kryptograficznym (jest jawny w szkicu),
+    # ale wyklucza PRZYPADKOWE podlaczenie sie pod zly port COM i wymaga
+    # swiadomego dzialania, zeby go obejsc.
+    IDENTITY_PREFIX = "ID:"
+
     # Maksymalna dlugosc akumulowanej ramki. Chroni przed zapchaniem pamieci,
     # gdy uszkodzony kabel generuje strumien bajtow bez znaku konca linii.
     MAX_LINE_BYTES = 64
@@ -31,7 +40,10 @@ class InterlockMonitor:
         port: str = "COM5",
         baudrate: int = 9600,
         heartbeat_timeout: float = 2.0,
+        expected_identity: str = "",
     ):
+        self.expected_identity = str(expected_identity or "").strip().upper()
+        self.identity_seen: Optional[str] = None
         self.port, self.baudrate, _ = validate_interlock_settings(
             port, baudrate, True
         )
@@ -182,6 +194,8 @@ class InterlockMonitor:
                         valid_state = True
                     elif message in self.OPEN_SIGNALS:
                         valid_state = False
+                    elif message.startswith(self.IDENTITY_PREFIX):
+                        self._handle_identity(message[len(self.IDENTITY_PREFIX):])
                     else:
                         print(f"[INTERLOCK] Nieznany sygnał: '{message}'")
 
@@ -240,8 +254,22 @@ class InterlockMonitor:
 
                 time.sleep(0.5)
 
-    def is_closed(self) -> Optional[bool]:
-        return self._last_state
+    def _handle_identity(self, value: str) -> None:
+        value = value.strip().upper()
+        if self.identity_seen != value:
+            self.identity_seen = value
+            print(f"[INTERLOCK] Podpis plyty: '{value}'")
+        if self.expected_identity and value != self.expected_identity:
+            self._report_connection_loss(
+                f"podpis plyty '{value}' zamiast '{self.expected_identity}' - "
+                "podlaczono niewlasciwe urzadzenie albo zly port COM"
+            )
+
+    def identity_ok(self) -> bool:
+        """Czy plyta przedstawila sie oczekiwanym podpisem."""
+        if not self.expected_identity:
+            return True
+        return self.identity_seen == self.expected_identity
 
     def reconnect(self) -> bool:
         """Zamyka port i uruchamia monitor od nowa.
@@ -258,6 +286,20 @@ class InterlockMonitor:
         callback = self._on_change
         self.disconnect()
         self._on_change = callback
+
+        # S2: disconnect() robi join z timeoutem 0,5 s. Gdy stary watek wisi
+        # w readline(), join wypada po czasie i watek ZYJE. Wyzerowanie
+        # _stop_flag spod niego sprawialo, ze start_monitoring() widzial
+        # zywy watek i nie startowal nowego, a stary - z odziedziczonym
+        # licznikiem bledow - zamykal swiezo otwarty port.
+        thread = self._thread
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=5.0)
+            if thread.is_alive():
+                print("[INTERLOCK] Stary watek monitora nie zakonczyl sie - "
+                      "nie ponawiam polaczenia")
+                return False
+        self._thread = None
         self._stop_flag.clear()
         self._rx_buffer = bytearray()
         self._last_raw = bytearray()

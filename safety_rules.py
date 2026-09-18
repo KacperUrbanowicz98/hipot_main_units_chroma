@@ -215,6 +215,35 @@ def channel_masks_overlap(masks: Mapping[str, str]) -> list[str]:
 # ---------------------------------------------------------------------- #
 # KROK TESTOWY
 # ---------------------------------------------------------------------- #
+# Znaki dopuszczalne w polach tekstowych, ktore trafiaja do raportu.
+# Raport jest plikiem tekstowym o strukturze "pole<TAB>wartosc" w osobnych
+# liniach - znak nowej linii albo tabulator w nazwie kroku pozwolil by
+# dopisac do raportu wlasna linie "Result: Pass" przed prawdziwym wynikiem
+# (K3 z audytu, odtworzone). Bialy znak w srodku nie wystarczy odciac
+# przez .strip(), bo ten dziala tylko na brzegach.
+_REPORT_TEXT_RE = re.compile(r"^[A-Za-z0-9 ._/()+-]+$")
+
+
+def validate_report_text(value: Any, field: str, max_length: int = 64) -> str:
+    """Sprawdza pole tekstowe, ktore zostanie wpisane do raportu z testu."""
+    text = str(value or "").strip()
+    if not text:
+        raise SafetyValidationError(f"{field}: wartosc nie moze byc pusta")
+    if len(text) > max_length:
+        raise SafetyValidationError(
+            f"{field}: maksymalnie {max_length} znakow, jest {len(text)}"
+        )
+    if not _REPORT_TEXT_RE.fullmatch(text):
+        forbidden = sorted({
+            repr(char) for char in text if not _REPORT_TEXT_RE.fullmatch(char)
+        })
+        raise SafetyValidationError(
+            f"{field}: niedozwolone znaki {', '.join(forbidden)} - "
+            "dozwolone sa litery A-Z, cyfry, spacja i . _ / ( ) + -"
+        )
+    return text
+
+
 def validate_step(step: Mapping[str, Any], index: int,
                   channel_count: int = 0) -> dict[str, Any]:
     """Waliduje i normalizuje pojedynczy krok profilu produktu."""
@@ -222,7 +251,9 @@ def validate_step(step: Mapping[str, Any], index: int,
         raise SafetyValidationError(f"Krok {index}: oczekiwano obiektu JSON")
 
     label = f"Krok {index}"
-    name = str(step.get("name", f"Step {index}")).strip()
+    name = validate_report_text(
+        step.get("name", f"Step {index}") or f"Step {index}",
+        f"Krok {index}: nazwa (Ext. Name)", max_length=40)
     if not name:
         raise SafetyValidationError(f"{label}: nazwa kroku nie moze byc pusta")
     label = f"Krok {index} ({name})"

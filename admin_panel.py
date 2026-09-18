@@ -3,11 +3,9 @@
 Zakladki:
   Stanowisko    - model testera, port RS232, identyfikator stanowiska
   Interlock     - port Arduino (wylaczenie interlocka jest niedostepne)
-  Mapa HWID     - HWID -> profil produktu + nazwa modelu
   Profile       - wlaczanie/wylaczanie profili na stanowisku i edycja krokow
-  Logi          - sciezka raportow
+  Logi          - sciezka raportow i dziennik audytowy
   Diagnostyka   - sonda SCPI wykrywajaca naglowki odrzucane przez firmware
-  Bezpieczenstwo- haslo panelu i dziennik audytowy
 
 Kazda zmiana parametru testowego trafia do dziennika audytowego wraz z wartoscia
 poprzednia. Bez tego nie da sie odtworzyc, na jakich nastawach wykonano
@@ -19,6 +17,7 @@ from __future__ import annotations
 import os
 import threading
 import tkinter as tk
+import traceback
 from tkinter import filedialog, messagebox, ttk
 from typing import Any, Optional
 
@@ -32,13 +31,7 @@ from safety_rules import (
     validate_step,
 )
 from scpi_dialect import supported_models
-from security import (
-    MIN_PASSWORD_LENGTH,
-    audit,
-    audit_changes,
-    audit_log_path,
-    hash_password,
-)
+from security import audit, audit_changes, audit_log_path
 from settings_manager import SettingsManager
 
 
@@ -50,7 +43,6 @@ class AdminPanel:
         self.catalog = catalog
         self.settings = SettingsManager()
         self.window: Optional[tk.Toplevel] = None
-        self._pending_hwid_error: Optional[str] = None
         self._edited_steps: list[dict[str, Any]] = []
         self._edited_profile: Optional[ProductProfile] = None
 
@@ -75,11 +67,9 @@ class AdminPanel:
 
         self._create_station_tab()
         self._create_interlock_tab()
-        self._create_hwid_tab()
         self._create_profile_tab()
         self._create_logs_tab()
         self._create_diagnostics_tab()
-        self._create_security_tab()
         self._create_footer()
 
     def _create_header(self) -> None:
@@ -117,7 +107,8 @@ class AdminPanel:
         return inner
 
     def _field(self, parent, row: int, label: str, variable,
-               values=None, width: int = 20) -> None:
+               values=None) -> None:
+        width = 20
         tk.Label(parent, text=label, bg=self.config.COLOR_WHITE, fg="#444444",
                  font=("Arial", 11), width=22, anchor="w").grid(
                      row=row, column=0, sticky="w", padx=(0, 12), pady=6)
@@ -229,6 +220,8 @@ class AdminPanel:
             self.config.DEVICE_FLOW_CONTROL = flow
             self.settings.save_config(self.config)
         except Exception as exc:
+            print(f"[ADMIN_PANEL] {exc!r}")
+            traceback.print_exc()
             for key, value in (
                 ("INSTRUMENT_MODEL", previous["MODEL"]),
                 ("STATION_ID", previous["STATION"]),
@@ -257,11 +250,13 @@ class AdminPanel:
                 self._parity_var.get(), self._flow_var.get())
             model = self._model_var.get().strip().upper()
         except Exception as exc:
+            print(f"[ADMIN_PANEL] {exc!r}")
+            traceback.print_exc()
             self.station_test_result.config(text=f"✗ Błąd ustawień: {exc}",
                                             fg=self.config.COLOR_ERROR)
             return
 
-        self.station_test_result.config(text="⏳ Łączenie...", fg="#FF9800")
+        self.station_test_result.config(text="⏳ Łączenie...", fg=self.config.COLOR_WARNING)
 
         def worker() -> None:
             try:
@@ -281,6 +276,8 @@ class AdminPanel:
                             f"na {port}")
                     color = self.config.COLOR_ERROR
             except Exception as exc:
+                print(f"[ADMIN_PANEL] {exc!r}")
+                traceback.print_exc()
                 text, color = f"✗ Błąd: {exc}", self.config.COLOR_ERROR
             self._safe_update(self.station_test_result, text, color)
 
@@ -352,6 +349,8 @@ class AdminPanel:
             self.config.INTERLOCK_ENABLED = enabled
             self.settings.save_config(self.config)
         except Exception as exc:
+            print(f"[ADMIN_PANEL] {exc!r}")
+            traceback.print_exc()
             self.config.INTERLOCK_PORT = previous["PORT"]
             self.config.INTERLOCK_BAUDRATE = previous["BAUD"]
             self.interlock_status.config(text=f"✗ Nie zapisano: {exc}",
@@ -367,12 +366,14 @@ class AdminPanel:
             port, baud, _ = validate_interlock_settings(
                 self._il_port_var.get(), self._il_baud_var.get(), True)
         except Exception as exc:
+            print(f"[ADMIN_PANEL] {exc!r}")
+            traceback.print_exc()
             self.interlock_test_result.config(text=f"✗ Błąd ustawień: {exc}",
                                                fg=self.config.COLOR_ERROR)
             return
 
         self.interlock_test_result.config(
-            text=f"⏳ Łączenie z Arduino na {port}...", fg="#FF9800")
+            text=f"⏳ Łączenie z Arduino na {port}...", fg=self.config.COLOR_WARNING)
 
         def worker() -> None:
             import time
@@ -406,164 +407,68 @@ class AdminPanel:
                     color = self.config.COLOR_ACCENT
                 elif line:
                     text = f"⚠ Nieznany format odpowiedzi: '{line}'"
-                    color = "#FF9800"
+                    color = self.config.COLOR_WARNING
                 else:
                     text = "⚠ Podłączone, brak danych — sprawdź baudrate/szkic"
-                    color = "#FF9800"
+                    color = self.config.COLOR_WARNING
             except Exception as exc:
+                print(f"[ADMIN_PANEL] {exc!r}")
+                traceback.print_exc()
                 text, color = f"✗ Błąd: {exc}", self.config.COLOR_ERROR
             self._safe_update(self.interlock_test_result, text, color)
 
         threading.Thread(target=worker, daemon=True).start()
 
     # ================================================================== #
-    # MAPA HWID
     # ================================================================== #
-    def _create_hwid_tab(self) -> None:
-        frame = self._tab("Mapa HWID")
-        self._title(frame, "Mapa HWID → produkt i model",
-                    "Pierwsze 6 znaków S/N wyznacza profil testowy oraz nazwę "
-                    "modelu w raporcie.\nDotyczy wyłącznie profili "
-                    "z identyfikacją „HWID”. Profile identyfikowane wyborem "
-                    "operatora (np. SR203_SR204)\nnie korzystają z mapy — "
-                    "może zostać pusta.")
+    def _create_integrity_box(self, parent) -> None:
+        """Stan kontroli sum profili - informacja dla TECHNOLOGA.
 
-        table_frame = tk.Frame(frame, bg=self.config.COLOR_WHITE)
-        table_frame.pack(fill=tk.BOTH, expand=True, padx=20)
-
-        columns = ("HWID", "Profil produktu", "Model")
-        self.hwid_tree = ttk.Treeview(table_frame, columns=columns,
-                                      show="headings", selectmode="browse",
-                                      height=12)
-        for column, width in zip(columns, (120, 200, 220)):
-            self.hwid_tree.heading(column, text=column)
-            self.hwid_tree.column(column, width=width, anchor="center")
-        scrollbar = ttk.Scrollbar(table_frame, orient="vertical",
-                                  command=self.hwid_tree.yview)
-        self.hwid_tree.configure(yscrollcommand=scrollbar.set)
-        self.hwid_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self._reload_hwid_tree()
-
-        editor = tk.Frame(frame, bg=self.config.COLOR_WHITE, relief=tk.RAISED,
-                          borderwidth=2)
-        editor.pack(fill=tk.X, padx=20, pady=8)
-        inner = tk.Frame(editor, bg=self.config.COLOR_WHITE)
-        inner.pack(padx=14, pady=10)
-
-        self._new_hwid_var = tk.StringVar()
-        self._new_product_var = tk.StringVar(
-            value=self.catalog.ids()[0] if self.catalog.ids() else "")
-        self._new_model_var = tk.StringVar()
-
-        for column, (label, variable, values, width) in enumerate((
-            ("HWID (6 znaków):", self._new_hwid_var, None, 10),
-            ("Profil:", self._new_product_var, self.catalog.ids(), 16),
-            ("Model:", self._new_model_var, None, 16),
-        )):
-            tk.Label(inner, text=label, bg=self.config.COLOR_WHITE, fg="#444444",
-                     font=("Arial", 10)).grid(row=0, column=column * 2,
-                                              sticky="w", padx=(0, 6), pady=4)
-            if values:
-                ttk.Combobox(inner, textvariable=variable, values=values,
-                             state="readonly", font=("Arial", 10),
-                             width=width).grid(row=0, column=column * 2 + 1,
-                                               sticky="w", padx=(0, 14), pady=4)
-            else:
-                tk.Entry(inner, textvariable=variable, font=("Arial", 10),
-                         width=width, relief=tk.SOLID, borderwidth=1).grid(
-                             row=0, column=column * 2 + 1, sticky="w",
-                             padx=(0, 14), pady=4)
-
-        tk.Button(inner, text="Dodaj / zmień", bg=self.config.COLOR_ACCENT,
-                  fg=self.config.COLOR_WHITE, font=("Arial", 10, "bold"),
-                  relief=tk.FLAT, cursor="hand2", width=13,
-                  command=self._add_hwid).grid(row=0, column=6, padx=(0, 6),
-                                               pady=4)
-        tk.Button(inner, text="Usuń zaznaczony", bg=self.config.COLOR_ERROR,
-                  fg=self.config.COLOR_WHITE, font=("Arial", 10, "bold"),
-                  relief=tk.FLAT, cursor="hand2", width=15,
-                  command=self._remove_hwid).grid(row=0, column=7, pady=4)
-
-        self.hwid_status = tk.Label(frame, text="", bg=self.config.COLOR_WHITE,
-                                    font=("Arial", 9))
-        self.hwid_status.pack(pady=(0, 6))
-        if self._pending_hwid_error:
-            self.hwid_status.config(
-                text=f"✗ Nie udało się wczytać mapy HWID: "
-                     f"{self._pending_hwid_error}",
-                fg=self.config.COLOR_ERROR)
-            self._pending_hwid_error = None
-
-    def _reload_hwid_tree(self) -> None:
-        """Bledy odczytu mapy MUSZA byc widoczne, nie polkniete."""
+        Byla wczesniej na ekranie startowym, czyli u operatora, ktory nie ma
+        jak na nia zareagowac. Staly komunikat ostrzegawczy bez mozliwosci
+        dzialania uczy ignorowania ostrzezen - a wtedy przestaje dzialac
+        rowniez ten czerwony, ktory naprawde blokuje testowanie.
+        """
         try:
-            from hwid_map import HwidMap
+            from profile_integrity import ProfileIntegrity
 
-            for row in self.hwid_tree.get_children():
-                self.hwid_tree.delete(row)
-            for hwid, entry in sorted(HwidMap(self.catalog).get_all().items()):
-                self.hwid_tree.insert("", tk.END, values=(
-                    hwid, entry["product"], entry["model"]))
+            integrity = ProfileIntegrity(self.config, self.catalog.directory)
+            integrity.check()
         except Exception as exc:
-            if getattr(self, "hwid_status", None) is not None:
-                self.hwid_status.config(
-                    text=f"✗ Nie udało się wczytać mapy HWID: {exc}",
-                    fg=self.config.COLOR_ERROR)
-            else:
-                self._pending_hwid_error = str(exc)
-
-    def _add_hwid(self) -> None:
-        from hwid_map import HwidMap
-
-        try:
-            ok, message = HwidMap(self.catalog).add(
-                self._new_hwid_var.get(), self._new_product_var.get(),
-                self._new_model_var.get())
-        except Exception as exc:
-            self.hwid_status.config(text=f"✗ Mapa HWID niedostępna: {exc}",
-                                    fg=self.config.COLOR_ERROR)
-            return
-        if not ok:
-            self.hwid_status.config(text=f"✗ {message}",
-                                    fg=self.config.COLOR_ERROR)
-            return
-        hwid = self._new_hwid_var.get().strip().upper()
-        self._new_hwid_var.set("")
-        self._new_model_var.set("")
-        self._reload_hwid_tree()
-        self.hwid_status.config(text=f"✓ Zapisano mapowanie {hwid}",
-                                fg=self.config.COLOR_ACCENT)
-
-    def _remove_hwid(self) -> None:
-        from hwid_map import HwidMap
-
-        selection = self.hwid_tree.selection()
-        if not selection:
-            self.hwid_status.config(text="Zaznacz wiersz do usunięcia.",
-                                    fg=self.config.COLOR_ERROR)
-            return
-        hwid = self.hwid_tree.item(selection[0], "values")[0]
-        if not messagebox.askyesno("Potwierdź", f"Usunąć mapowanie '{hwid}'?",
-                                   parent=self.window):
-            return
-        try:
-            removed = HwidMap(self.catalog).remove(hwid)
-        except Exception as exc:
-            self.hwid_status.config(text=f"✗ Nie udało się zapisać mapy: {exc}",
-                                    fg=self.config.COLOR_ERROR)
-            return
-        self._reload_hwid_tree()
-        if removed:
-            self.hwid_status.config(text=f"✓ Usunięto: {hwid}",
-                                    fg=self.config.COLOR_ACCENT)
+            print(f"[ADMIN_PANEL] {exc!r}")
+            traceback.print_exc()
+            summary, blocked, external = f"Nie sprawdzono: {exc}", True, False
         else:
-            self.hwid_status.config(text=f"✗ Nie znaleziono: {hwid}",
-                                    fg=self.config.COLOR_ERROR)
+            summary = integrity.summary()
+            blocked, external = integrity.blocked, integrity.external
 
-    # ================================================================== #
-    # PROFILE PRODUKTOW
-    # ================================================================== #
+        if blocked:
+            background, foreground = "#FFEBEE", self.config.COLOR_ERROR
+        elif external:
+            background, foreground = "#E8F5E9", self.config.COLOR_ACCENT
+        else:
+            background, foreground = "#FFF8E1", self.config.COLOR_WARNING
+
+        box = tk.Frame(parent, bg=background, relief=tk.RIDGE, borderwidth=1)
+        box.pack(fill=tk.X, padx=30, pady=(0, 10))
+        tk.Label(box, text="Kontrola sum kontrolnych profili", bg=background,
+                 fg=foreground, font=("Arial", 10, "bold")).pack(
+                     anchor="w", padx=12, pady=(8, 2))
+        tk.Label(box, text=summary, bg=background, fg="#333333",
+                 font=("Arial", 9), justify="left", wraplength=880).pack(
+                     anchor="w", padx=12)
+        if not external and not blocked:
+            tk.Label(box,
+                     text="Manifest lokalny wykrywa edycję pliku profilu obok "
+                          "panelu, ale leży w tym samym folderze co profile.\n"
+                          "Pełną kontrolę daje dopiero PROFILE_MANIFEST_PATH "
+                          "wskazujący udział sieciowy tylko do odczytu.",
+                     bg=background, fg="#6D4C41",
+                     font=("Arial", 8, "italic"), justify="left").pack(
+                         anchor="w", padx=12, pady=(2, 8))
+        else:
+            tk.Frame(box, bg=background, height=6).pack()
+
     def _create_profile_tab(self) -> None:
         frame = self._tab("Profile")
         self._title(frame, "Profile testowe",
@@ -572,6 +477,7 @@ class AdminPanel:
                     "kroków zapisuje się do products/<profil>.json i obowiązuje "
                     "od następnego testu.")
 
+        self._create_integrity_box(frame)
         self._create_enabled_products_box(frame)
 
         selector = tk.Frame(frame, bg=self.config.COLOR_WHITE)
@@ -579,8 +485,13 @@ class AdminPanel:
         tk.Label(selector, text="Profil:", bg=self.config.COLOR_WHITE,
                  fg="#444444", font=("Arial", 11, "bold")).pack(side=tk.LEFT,
                                                                 padx=(0, 8))
+        # Domyslnie pierwszy profil WLACZONY na tym stanowisku, nie pierwszy
+        # alfabetycznie: technolog na stanowisku SR203 dostawal wczesniej
+        # sciane roznic wzgledem ER115.
+        enabled = [pid for pid in self.catalog.ids()
+                   if self.config.is_product_enabled(pid)]
         self._profile_var = tk.StringVar(
-            value=self.catalog.ids()[0] if self.catalog.ids() else "")
+            value=(enabled or self.catalog.ids() or [""])[0])
         combo = ttk.Combobox(selector, textvariable=self._profile_var,
                              values=self.catalog.ids(), state="readonly",
                              font=("Arial", 11), width=24)
@@ -618,6 +529,12 @@ class AdminPanel:
             ("▲ W górę", "#455A64", lambda: self._move_step(-1), 12),
             ("▼ W dół", "#455A64", lambda: self._move_step(1), 12),
             ("Edytuj krok", "#607D8B", self._edit_step, 16),
+            # Najbardziej wartosciowa funkcja panelu - jedyne obiektywne
+            # sprawdzenie, czy profil zgadza sie z tym, co jest w testerze.
+            # Byla schowana pod zakladka nazwana od protokolu; tu jest
+            # dokladnie tam, gdzie technolog patrzy na profil.
+            ("Porównaj z testerem", "#00695C",
+             self._compare_with_instrument, 20),
             ("Zapisz profil", self.config.COLOR_ACCENT, self._save_profile, 16),
         ):
             tk.Button(buttons, text=text, bg=color, fg=self.config.COLOR_WHITE,
@@ -710,6 +627,8 @@ class AdminPanel:
         try:
             self.settings.save_config(self.config)
         except Exception as exc:
+            print(f"[ADMIN_PANEL] {exc!r}")
+            traceback.print_exc()
             self.config.ENABLED_PRODUCTS = previous
             self.enabled_status.config(text=f"✗ Nie zapisano: {exc}",
                                        fg=self.config.COLOR_ERROR)
@@ -731,13 +650,10 @@ class AdminPanel:
             return
         self._edited_profile = profile
         self._edited_steps = [dict(step) for step in profile.steps]
-        identification = ("mapa HWID" if profile.requires_hwid
-                          else "wybór operatora z listy")
         lengths = " lub ".join(str(x) for x in profile.serial_lengths)
         self.profile_meta.config(
             text=f"{profile.display_name} | Chroma "
                  f"{'/'.join(profile.allowed_models)}"
-                 + f" | identyfikacja: {identification}"
                  + f" | S/N {lengths} znaków (A-Z, 0-9)"
                  + (f" + scan box {profile.channel_count} kan."
                     if profile.channel_count else "")
@@ -868,11 +784,17 @@ class AdminPanel:
             candidate = dict(step)
             try:
                 candidate["name"] = variables["name"].get().strip()
-                candidate["voltage"] = float(variables["voltage"].get()) * 1000.0
+                # Klawiatura numeryczna w polskim Windows daje przecinek.
+                # float("1,06") konczylo sie komunikatem Pythona wprost
+                # w twarz technologa.
+                def number(key: str) -> float:
+                    return float(variables[key].get().strip().replace(",", "."))
+
+                candidate["voltage"] = number("voltage") * 1000.0
                 for key in ("limit_high", "limit_low", "presence_min_current",
                             "arc_sense", "real_limit",
                             "ramp_time", "dwell", "ramp_dn"):
-                    candidate[key] = float(variables[key].get())
+                    candidate[key] = number(key)
                 if channel_count:
                     candidate["channels"] = validate_channel_mask(
                         variables["channels"].get(), channel_count,
@@ -899,6 +821,48 @@ class AdminPanel:
                   font=("Arial", 10, "bold"), width=12, relief=tk.FLAT,
                   cursor="hand2", command=dialog.destroy).pack(side=tk.LEFT,
                                                                padx=5)
+
+    # Pola kroku pokazywane w podsumowaniu zmian: klucz -> (etykieta, format).
+    _CHANGE_FIELDS = (
+        ("name", "Ext. Name", None),
+        ("voltage", "Voltage [kV]", 0.001),
+        ("limit_high", "High Limit [mA]", 1.0),
+        ("limit_low", "Low Limit [mA]", 1.0),
+        ("arc_sense", "ARC Limit [mA]", 1.0),
+        ("dwell", "Test Time [s]", 1.0),
+        ("ramp_time", "Ramp Time [s]", 1.0),
+        ("ramp_dn", "Fall Time [s]", 1.0),
+        ("real_limit", "Real Current [mA]", 1.0),
+        ("channels", "Channel", None),
+        ("presence_min_current", "Próg obecności [mA]", 1.0),
+    )
+
+    def _describe_step_changes(self, previous, candidate) -> list[str]:
+        """Lista zmian w formie "pole: bylo -> bedzie", tylko dla roznic."""
+        changes: list[str] = []
+        by_name = {step["name"]: step for step in previous.steps}
+        for index, new_step in enumerate(candidate.steps, start=1):
+            old_step = by_name.get(new_step["name"])
+            if old_step is None:
+                changes.append(f"  {index}. {new_step['name']}: NOWY KROK")
+                continue
+            for key, label, scale in self._CHANGE_FIELDS:
+                old_value, new_value = old_step.get(key), new_step.get(key)
+                if old_value == new_value:
+                    continue
+                if scale is None:
+                    changes.append(
+                        f"  {index}. {new_step['name']} — {label}: "
+                        f"{old_value} → {new_value}")
+                else:
+                    changes.append(
+                        f"  {index}. {new_step['name']} — {label}: "
+                        f"{float(old_value) * scale:.3f} → "
+                        f"{float(new_value) * scale:.3f}")
+        removed = [name for name in by_name
+                   if name not in {s["name"] for s in candidate.steps}]
+        changes.extend(f"  USUNIĘTY KROK: {name}" for name in removed)
+        return changes
 
     def _save_profile(self) -> None:
         if self._edited_profile is None:
@@ -930,10 +894,22 @@ class AdminPanel:
                         f"\n  było:  {' → '.join(previous_order)}"
                         f"\n  będzie: {' → '.join(new_order)}")
 
+        # S11: samo wypisanie NOWYCH wartosci nie pozwala zauwazyc literowki -
+        # "1.6" zamiast "1.060" przechodzi walidacje (dopuszczalne 100-5000 V)
+        # i wyglada na ekranie zupelnie zwyczajnie. Pokazujemy WYLACZNIE to,
+        # co sie zmienia, w formie "bylo -> bedzie".
+        changes = self._describe_step_changes(previous, candidate)
+        change_block = (
+            "\n\nZMIENIANE WARTOŚCI:\n" + "\n".join(changes)
+            if changes else "\n\n(Parametry kroków bez zmian.)"
+        )
+
         if not messagebox.askyesno(
             "Potwierdzenie profilu produkcyjnego",
-            f"Profil {candidate.display_name} zostanie użyty dla WSZYSTKICH "
-            f"HWID przypisanych do '{candidate.product_id}'.\n\n{lines}{warning}"
+            f"Profil {candidate.display_name} zostanie użyty dla KAŻDEJ "
+            f"sztuki testowanej na tym stanowisku."
+            f"{change_block}{warning}\n\n"
+            f"Profil po zapisie:\n{lines}"
             "\n\nCzy wartości są zgodne z zatwierdzoną instrukcją testową?",
             parent=self.window,
         ):
@@ -944,6 +920,8 @@ class AdminPanel:
         try:
             path = self.catalog.save(candidate)
         except Exception as exc:
+            print(f"[ADMIN_PANEL] {exc!r}")
+            traceback.print_exc()
             self.profile_status.config(text=f"✗ Nie zapisano: {exc}",
                                        fg=self.config.COLOR_ERROR)
             return
@@ -957,17 +935,33 @@ class AdminPanel:
         ):
             audit_changes(f"PROFIL/{candidate.product_id}/krok{index}",
                           before, after)
+        # Zapis z panelu jest legalna zmiana - manifest sum musi ja przyjac,
+        # inaczej stanowisko zablokowaloby sie przy nastepnym uruchomieniu.
+        manifest_note = ""
+        try:
+            from profile_integrity import ProfileIntegrity
+
+            integrity = ProfileIntegrity(self.config, self.catalog.directory)
+            problem = integrity.refresh_after_panel_edit(candidate.product_id)
+            if problem:
+                manifest_note = f"\n⚠ {problem}"
+        except Exception as exc:
+            manifest_note = f"\n⚠ Nie zaktualizowano manifestu profili: {exc}"
+            print(f"[PROFILE] {exc}")
+
         self._load_profile()
         self.profile_status.config(
             text=f"✓ Zapisano {path.name} | czas cyklu "
-                 f"{candidate.total_duration:.1f} s",
-            fg=self.config.COLOR_ACCENT)
+                 f"{candidate.total_duration:.1f} s{manifest_note}",
+            fg=(self.config.COLOR_WARNING if manifest_note
+                else self.config.COLOR_ACCENT))
 
     # ================================================================== #
     # LOGI
     # ================================================================== #
     def _create_logs_tab(self) -> None:
         frame = self._tab("Logi")
+        self._create_audit_note(frame)
         self._title(frame, "Lokalizacja zapisu raportów",
                     "Obsługiwane są ścieżki lokalne i sieciowe UNC "
                     "(\\\\serwer\\folder).")
@@ -999,7 +993,7 @@ class AdminPanel:
 
         buttons = tk.Frame(frame, bg=self.config.COLOR_WHITE)
         buttons.pack(pady=6)
-        tk.Button(buttons, text="Sprawdź dostępność", bg="#FF9800",
+        tk.Button(buttons, text="Sprawdź dostępność", bg=self.config.COLOR_WARNING,
                   fg=self.config.COLOR_WHITE, font=("Arial", 11, "bold"),
                   relief=tk.FLAT, cursor="hand2", width=20, height=2,
                   command=self._check_log_dir).pack(side=tk.LEFT, padx=(0, 10))
@@ -1030,6 +1024,8 @@ class AdminPanel:
                 self.log_status.config(text=f"✓ Folder utworzony: {path}",
                                        fg=self.config.COLOR_ACCENT)
             except Exception as exc:
+                print(f"[ADMIN_PANEL] {exc!r}")
+                traceback.print_exc()
                 self.log_status.config(
                     text=f"✗ Nie można utworzyć folderu: {exc}",
                     fg=self.config.COLOR_ERROR)
@@ -1044,6 +1040,8 @@ class AdminPanel:
                 text=f"✓ Ścieżka dostępna i zapisywalna: {path}",
                 fg=self.config.COLOR_ACCENT)
         except Exception as exc:
+            print(f"[ADMIN_PANEL] {exc!r}")
+            traceback.print_exc()
             self.log_status.config(text=f"✗ Brak uprawnień do zapisu: {exc}",
                                    fg=self.config.COLOR_ERROR)
 
@@ -1056,6 +1054,8 @@ class AdminPanel:
         try:
             os.makedirs(path, exist_ok=True)
         except Exception as exc:
+            print(f"[ADMIN_PANEL] {exc!r}")
+            traceback.print_exc()
             self.log_status.config(text=f"✗ Nie można utworzyć folderu: {exc}",
                                    fg=self.config.COLOR_ERROR)
             return
@@ -1065,6 +1065,8 @@ class AdminPanel:
         try:
             self.settings.save_config(self.config)
         except Exception as exc:
+            print(f"[ADMIN_PANEL] {exc!r}")
+            traceback.print_exc()
             self.config.LOG_DIR = previous
             self.log_status.config(text=f"✗ Nie zapisano konfiguracji: {exc}",
                                    fg=self.config.COLOR_ERROR)
@@ -1134,6 +1136,8 @@ class AdminPanel:
         try:
             dialect = self.config.dialect()
         except Exception as exc:
+            print(f"[ADMIN_PANEL] {exc!r}")
+            traceback.print_exc()
             self.diag_status.config(text=f"✗ {exc}", fg=self.config.COLOR_ERROR)
             return
         for name, template, state in dialect.as_report():
@@ -1147,7 +1151,7 @@ class AdminPanel:
             fg="#E65100" if unverified else self.config.COLOR_ACCENT)
 
     def _run_probe(self) -> None:
-        self.diag_status.config(text="⏳ Łączenie i sondowanie...", fg="#FF9800")
+        self.diag_status.config(text="⏳ Łączenie i sondowanie...", fg=self.config.COLOR_WARNING)
 
         def worker() -> None:
             try:
@@ -1172,6 +1176,8 @@ class AdminPanel:
                 finally:
                     device.disconnect()
             except Exception as exc:
+                print(f"[ADMIN_PANEL] {exc!r}")
+                traceback.print_exc()
                 self._safe_update(self.diag_status, f"✗ Błąd sondy: {exc}",
                                   self.config.COLOR_ERROR)
                 return
@@ -1209,7 +1215,7 @@ class AdminPanel:
 
         self.diag_status.config(
             text=f"⏳ Odczyt programu z testera i porównanie z "
-                 f"{profile.display_name}...", fg="#FF9800")
+                 f"{profile.display_name}...", fg=self.config.COLOR_WARNING)
 
         def worker() -> None:
             try:
@@ -1234,6 +1240,8 @@ class AdminPanel:
                 finally:
                     device.disconnect()
             except Exception as exc:
+                print(f"[ADMIN_PANEL] {exc!r}")
+                traceback.print_exc()
                 self._safe_update(self.diag_status,
                                   f"✗ Błąd odczytu programu: {exc}",
                                   self.config.COLOR_ERROR)
@@ -1367,80 +1375,28 @@ class AdminPanel:
                       "⚠ Odrzucone komendy opcjonalne: " + ", ".join(rejected)),
                 fg=(self.config.COLOR_ACCENT if not rejected else "#E65100"))
 
-    # ================================================================== #
-    # BEZPIECZENSTWO
-    # ================================================================== #
-    def _create_security_tab(self) -> None:
-        frame = self._tab("Bezpieczeństwo")
-        self._security_tab_index = self.notebook.index("end") - 1
+    # ------------------------------------------------------------------ #
+    def _create_audit_note(self, parent) -> None:
+        """Dziennik audytowy - byl w usunietej zakladce Bezpieczenstwo.
 
-        tk.Label(frame, text="Hasło panelu inżynieryjnego",
-                 bg=self.config.COLOR_WHITE, fg=self.config.COLOR_PRIMARY,
-                 font=("Arial", 13, "bold")).pack(pady=(16, 4))
-        self.security_hint = tk.Label(
-            frame,
-            text=(f"W pliku station_config.json trzymany jest wyłącznie skrót "
-                  f"PBKDF2-SHA256 hasła — w plikach aplikacji hasła nie ma,\n"
-                  f"więc nie da się go odczytać z EXE. Obowiązujące hasło "
-                  f"stanowiska jest opisane w dokumentacji wdrożeniowej.\n"
-                  f"Minimalna długość przy zmianie: "
-                  f"{MIN_PASSWORD_LENGTH} znaków."),
-            bg=self.config.COLOR_WHITE, fg="#666666",
-            font=("Arial", 9, "italic"), justify="center")
-        self.security_hint.pack(pady=(0, 12))
+        Zakladka odpadla, bo haslo panelu jest stale i nie ma juz czego w niej
+        zmieniac. Dziennik audytowy to jednak jedyny zapis tego, KTO i KIEDY
+        zmienil nastawy testowe - musial zostac widoczny, wiec trafil tutaj,
+        obok sciezki raportow.
+        """
+        box = tk.Frame(parent, bg="#fff8e1", relief=tk.RIDGE, borderwidth=1)
+        box.pack(fill=tk.X, padx=30, pady=(12, 0))
+        tk.Label(box, text="Dziennik audytowy zmian konfiguracji",
+                 bg="#fff8e1", fg="#E65100",
+                 font=("Arial", 10, "bold")).pack(anchor="w", padx=12,
+                                                  pady=(8, 2))
+        tk.Label(box, text=audit_log_path(), bg="#fff8e1", fg="#5D4037",
+                 font=("Consolas", 9)).pack(anchor="w", padx=12)
+        tk.Label(box,
+                 text="Każda zmiana parametru testowego zapisuje się tu razem "
+                      "z wartością poprzednią.\nFolder aplikacji musi mieć "
+                      "uprawnienia NTFS ograniczone do technologa — inaczej "
+                      "dziennik\nmożna podmienić.",
+                 bg="#fff8e1", fg="#6D4C41", font=("Arial", 8, "italic"),
+                 justify="left").pack(anchor="w", padx=12, pady=(2, 8))
 
-        inner = self._card(frame)
-        self._pw_new_var = tk.StringVar()
-        self._pw_confirm_var = tk.StringVar()
-        for row, (label, variable) in enumerate((
-            ("Nowe hasło:", self._pw_new_var),
-            ("Powtórz hasło:", self._pw_confirm_var),
-        )):
-            tk.Label(inner, text=label, bg=self.config.COLOR_WHITE, fg="#444444",
-                     font=("Arial", 11), width=18, anchor="w").grid(
-                         row=row, column=0, sticky="w", padx=(0, 12), pady=6)
-            tk.Entry(inner, textvariable=variable, show="*", font=("Arial", 11),
-                     width=24, relief=tk.SOLID, borderwidth=1).grid(
-                         row=row, column=1, sticky="w", pady=6)
-
-        self.security_status = tk.Label(frame, text="",
-                                        bg=self.config.COLOR_WHITE,
-                                        font=("Arial", 10))
-        self.security_status.pack(pady=(0, 4))
-        tk.Button(frame, text="Ustaw nowe hasło", bg=self.config.COLOR_ACCENT,
-                  fg=self.config.COLOR_WHITE, font=("Arial", 11, "bold"),
-                  relief=tk.FLAT, cursor="hand2", width=22, height=2,
-                  command=self._save_password).pack(pady=6)
-
-        tk.Label(frame,
-                 text=(f"Dziennik audytowy zmian konfiguracji:\n"
-                       f"{audit_log_path()}\n\nSkrót w pliku chroni przed "
-                       "odczytaniem hasła, ale nie przed jego podmianą przez "
-                       "osobę\nmającą prawo zapisu do folderu aplikacji. "
-                       "Folder stanowiska musi mieć uprawnienia NTFS\n"
-                       "ograniczone do technologa."),
-                 bg=self.config.COLOR_WHITE, fg="#E65100",
-                 font=("Arial", 8, "italic"), justify="left",
-                 wraplength=640).pack(pady=(14, 0), padx=30, anchor="w")
-
-    def _save_password(self) -> None:
-        if self._pw_new_var.get() != self._pw_confirm_var.get():
-            self.security_status.config(text="✗ Hasła nie są identyczne",
-                                        fg=self.config.COLOR_ERROR)
-            return
-        previous = getattr(self.config, "ADMIN_PASSWORD", None)
-        try:
-            self.config.ADMIN_PASSWORD = hash_password(self._pw_new_var.get())
-            self.settings.save_config(self.config)
-        except Exception as exc:
-            self.config.ADMIN_PASSWORD = previous
-            self.security_status.config(text=f"✗ Nie zapisano: {exc}",
-                                        fg=self.config.COLOR_ERROR)
-            return
-
-        audit("ZMIANA/HASLO", "ustawiono nowe haslo panelu inzynieryjnego")
-        self._pw_new_var.set("")
-        self._pw_confirm_var.set("")
-        self.security_status.config(
-            text="✓ Hasło zmienione — obowiązuje od następnego wejścia",
-            fg=self.config.COLOR_ACCENT)

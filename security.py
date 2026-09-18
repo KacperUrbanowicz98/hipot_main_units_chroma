@@ -47,13 +47,23 @@ MIN_PASSWORD_LENGTH = 8
 _AUDIT_DIR_NAME = "app_runtime_logs"
 _AUDIT_FILE_NAME = "config_audit.log"
 _AUDIT_LOCK = threading.Lock()
+# Ostatni nieudany zapis do dziennika audytowego (S8).
+_AUDIT_FAILED: Optional[str] = None
 
 
 # ---------------------------------------------------------------------- #
 # HASLO
 # ---------------------------------------------------------------------- #
 def hash_password(password: str) -> dict[str, Any]:
-    """Tworzy rekord hasla gotowy do zapisu w JSON."""
+    """Tworzy rekord hasla gotowy do zapisu w ``station_config.json``.
+
+    Aplikacja nie wywoluje tej funkcji w czasie pracy - haslo panelu jest
+    stale, a zakladka do jego zmiany zostala usunieta. Funkcja zostaje jako
+    JEDYNY sposob wygenerowania rekordu hasla: gdyby zostala skasowana,
+    nie byloby czym zastapic wpisu ADMIN_PASSWORD po jego utracie.
+    Uzywana przez release_selftest.py i przy przygotowaniu konfiguracji
+    stanowiska.
+    """
     text = str(password or "")
     if len(text) < MIN_PASSWORD_LENGTH:
         raise SafetyValidationError(
@@ -193,8 +203,18 @@ def audit(event: str, detail: str = "") -> None:
             with path.open("a", encoding="utf-8") as handle:
                 handle.write(line)
     except OSError as exc:
-        print(f"[AUDIT] Nie udalo sie zapisac wpisu audytowego: {exc}")
+        # S8: dziennik audytowy jest jedynym zapisem tego, kto zmienil
+        # nastawy. Cichy brak zapisu (np. plik ustawiony tylko-do-odczytu)
+        # wyciszal audyt na dobre. Flaga jest odczytywana przez aplikacje.
+        global _AUDIT_FAILED
+        _AUDIT_FAILED = f"{exc}"
+        print(f"[AUDIT] NIE ZAPISANO WPISU AUDYTOWEGO: {exc}")
     print(f"[AUDIT] {event} {detail}".rstrip())
+
+
+def audit_failure() -> Optional[str]:
+    """Komunikat ostatniego nieudanego zapisu do dziennika albo ``None``."""
+    return _AUDIT_FAILED
 
 
 def audit_changes(section: str, before: Mapping[str, Any],

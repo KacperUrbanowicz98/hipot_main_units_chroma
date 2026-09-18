@@ -1,19 +1,38 @@
 """Builder EXE silnika Hi-Pot Reconext.
 
 Buduje aplikacje PyInstallerem w trybie ONEDIR bez podpisu cyfrowego.
-Pliki ``station_config.json``, ``hwid_map.json`` i katalog ``products``
-pozostaja obok EXE i moga byc edytowane z panelu administratora.
+Pliki ``station_config.json``, ``profiles_manifest.json`` i katalog
+``products`` pozostaja obok EXE i moga byc edytowane z panelu
+inzynieryjnego.
 
-Kontrola wydania (dwie warstwy):
+Kontrole przy budowaniu - i co kazda z nich RZECZYWISCIE daje:
 
-1. Markery zabezpieczen - kazdy plik zrodlowy musi zawierac wskazane elementy
-   i nie moze zawierac elementow zabronionych. Chroni przed zbudowaniem EXE
-   z pliku, w ktorym ktos wyciol bramke bezpieczenstwa.
-2. ``approved_sources.json`` (opcjonalny) - lista zatwierdzonych sum SHA-256.
-   Gdy plik istnieje, kazda rozbieznosc BLOKUJE build. Sluzy do formalnego
-   zwolnienia wersji: technolog zatwierdza konkretne sumy, a builder pilnuje,
-   ze nikt nie zbudowal EXE z innego kodu. Wygenerujesz go poleceniem:
+1. Markery zabezpieczen. Kazdy plik zrodlowy musi zawierac wskazane elementy
+   (nazwy funkcji i stalych stanowiacych bramki bezpieczenstwa) i nie moze
+   zawierac elementow zabronionych ani tych usunietych swiadomie.
+   Wykrywa: wyciecie calej bramki, powrot logowania operatora albo mapy HWID,
+   jawne haslo zostawione w kodzie po debugowaniu.
+   NIE wykrywa: podmiany TRESCI funkcji przy zachowanej nazwie. To kontrola
+   pomylek, nie zabezpieczenie przed swiadoma zmiana.
+
+2. Testy funkcjonalne w preflighcie. Uruchamiaja ``release_selftest.py``
+   i sprawdzaja ZACHOWANIE, nie obecnosc napisow: ze zle i puste haslo
+   faktycznie odpadaja, ze zaden profil nie ma kroku bez progu obecnosci,
+   ze zadne pole tekstowe profilu nie zawiera znaku sterujacego.
+
+3. ``approved_sources.json`` - sumy SHA-256 plikow zrodlowych.
+   Gdy plik istnieje, kazda rozbieznosc zatrzymuje build.
+   Daje: wykrycie przypadkowego zbudowania EXE ze starej albo roboczej kopii
+   pliku, gdy nikt nie ruszal listy sum.
+   NIE daje: dowodu integralnosci wydania. Lista lezy obok zrodel, regeneruje
+   ja ``--approve``, nie jest podpisana i nie obejmuje ``products/*.json``
+   ani ``station_config.json``. Nie opisuj jej w dokumentacji jakosciowej
+   jako kontroli bezpieczenstwa. Wygenerujesz ja poleceniem:
        python create_exe.py --approve
+
+Kontrola dzialajaca NA STANOWISKU to ``profiles_manifest.json`` - sumy
+kontrolne profili sprawdzane przy kazdym uruchomieniu aplikacji.
+Preflight generuje go razem z wydaniem i builder kopiuje obok EXE.
 """
 
 from __future__ import annotations
@@ -63,16 +82,25 @@ PROJECT_FILES = [
     "scpi_dialect.py",
     "hipot_device.py",
     "interlock.py",
-    "hwid_map.py",
     "report_writer.py",
     "safety_rules.py",
     "security.py",
+    "profile_integrity.py",
     "runtime_logging.py",
 ]
 
 EDITABLE_DATA_FILES = [
     "station_config.json",
-    "hwid_map.json",
+]
+
+# Manifest sum kontrolnych profili. Generowany przez preflight i kopiowany
+# obok EXE, zeby stanowisko startowalo ze ZWERYFIKOWANYM katalogiem profili.
+# Bez niego aplikacja tworzy manifest lokalny przy pierwszym uruchomieniu -
+# czyli zatwierdza to, co akurat lezy w products, i cala kontrola z buildu
+# idzie w niwecz. Opcjonalny, bo przy PROFILE_MANIFEST_PATH wskazujacym
+# udzial sieciowy manifestu na stanowisku nie ma wcale.
+OPTIONAL_DATA_FILES = [
+    "profiles_manifest.json",
 ]
 
 PRODUCTS_DIR = "products"
@@ -91,6 +119,8 @@ REQUIRED_SAFETY_MARKERS = {
         "def validate_step_pass_evidence",
         "def validate_cycle_pass_evidence",
         "def validate_channel_mask",
+        # K3: pola tekstowe profilu nie moga dopisac wlasnej linii do raportu.
+        "def validate_report_text",
     ),
     "hipot_device.py": (
         "_cycle_active_confirmed",
@@ -100,6 +130,20 @@ REQUIRED_SAFETY_MARKERS = {
         "mask_to_channel_lists",
         "channels_high",
         "keylock_on",
+        # K1: STOP przerywa trwajaca wymiane I/O, zamiast czekac na blokade
+        # przez caly cykl ponowien (do ~3 s z napieciem na wyrobie).
+        # Markery z wywolaniem, nie sama nazwa: "_abort_flag" jest prefiksem
+        # "_abort_flag_off", wiec samo przemianowanie przeszloby kontrole.
+        "self._abort_flag.set()",
+        "self._abort_flag.is_set()",
+        "def request_stop",
+        # K2: zatrzymanie jest POTWIERDZANE odczytem z testera.
+        "def confirm_stopped",
+        "HV_OFF_VOLTAGE",
+        # K6: bramki czasu liczone od znacznika zapisu SAFEty:STARt.
+        "def cycle_started_monotonic",
+        # S10: numer kroku z SET? porownywany z badanym krokiem.
+        "_check_step_number",
     ),
     "test_screen.py": (
         "validate_step_pass_evidence",
@@ -107,6 +151,62 @@ REQUIRED_SAFETY_MARKERS = {
         "_valid_close_transition",
         "_cycle_terminal_seen",
         "fresh_cycle",
+        # K1/K2: STOP z watku Tk i reakcja na brak potwierdzenia.
+        "request_stop",
+        "_show_stop_not_confirmed",
+        # S3: pojedynczy transient nie uniewaznia PASS-a.
+        "OVERCURRENT_STREAK_REQUIRED",
+        # Przebieg bez wyniku zostawia slad w dzienniku audytowym.
+        "_record_incomplete_run",
+    ),
+    "profile_integrity.py": (
+        # K5: profil zmieniony poza panelem blokuje testowanie.
+        "class ProfileIntegrity",
+        "def verify_profiles",
+        "def file_digest",
+        "def save_manifest",
+        "sha256",
+    ),
+    "report_writer.py": (
+        "def save_report",
+        # Zapis atomowy: watcher nigdy nie zobaczy polowy raportu.
+        "os.replace",
+        "fsync",
+        # Dosylka raportow z katalogu awaryjnego na udzial.
+        "def flush_pending_reports",
+    ),
+    "gui.py": (
+        # Przebudowa ekranu nie moze siegac do zniszczonych widgetow.
+        "_clear_screen_widgets",
+        "_widget_alive",
+        # Jedna droga sprawdzania numeru seryjnego dla wszystkich ekranow.
+        "resolve_serial",
+    ),
+    "admin_panel.py": (
+        # Kazda zmiana parametru testowego trafia do dziennika audytowego -
+        # bez tego nie da sie odtworzyc, na jakich nastawach zrobiono partie.
+        "audit_changes",
+        # Zapis profilu produkcyjnego wymaga potwierdzenia, a okno pokazuje
+        # WYLACZNIE zmieniane wartosci w formie "bylo -> bedzie".
+        "_describe_step_changes",
+        "askyesno",
+        # Panel nie moze zapisac kroku, ktory nie przeszedl walidacji.
+        "validate_step",
+    ),
+    "settings_manager.py": (
+        # Twarde bramki konfiguracji: interlocka i zapisu raportow nie da sie
+        # wylaczyc edycja JSON-a.
+        "AUTO_SAVE_RESULTS musi pozostac true",
+        "validate_password_record",
+        # Zapis atomowy konfiguracji - zanik zasilania nie zostawi polowy.
+        "def atomic_write_json",
+    ),
+    "scpi_dialect.py": (
+        "PASS_JUDGMENT",
+        "NON_TERMINAL_JUDGMENTS",
+        # Kanaly scan boxa jako LISTY, zgodnie z manualem s. 5-21.
+        "def encode_channel_list",
+        "REQUIRED_SCAN_COMMANDS",
     ),
     "product_profile.py": (
         "validate_step",
@@ -143,6 +243,16 @@ REMOVED_MARKERS = {
     "gui.py": ("_create_operator_panel", "_login_operator",
                "REQUIRE_OPERATOR_LOGIN"),
 }
+
+# Mapa HWID zostala usunieta w calosci: numery seryjne wyrobow testowanych
+# na Chromie nie niosa informacji o modelu, wiec nie bylo z czego go
+# odczytac. Profil wskazuje operator z listy. Gdyby ktos przywrocil czesc
+# tego kodu, powstalaby DRUGA droga rozpoznawania wyrobu - a rozjechanie
+# sie dwoch drog bylo zrodlem bledu zgloszonego ze stanowiska 26.08.
+_HWID_MARKERS = ("HwidMap", "load_hwid_map", "requires_hwid", "identify_by")
+for _module in ("gui.py", "test_screen.py", "product_profile.py",
+                "settings_manager.py"):
+    REMOVED_MARKERS[_module] = REMOVED_MARKERS.get(_module, ()) + _HWID_MARKERS
 
 
 class BuildError(RuntimeError):
@@ -216,20 +326,61 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest().upper()
 
 
+def _string_constants(text: str) -> list[str]:
+    """Wszystkie stale napisowe w pliku, po skleceniu prostych konkatenacji.
+
+    Szukanie hasla jako PODCIAGU tekstu zrodlowego wykrywa tylko naiwne
+    wklejenie. Parser Pythona sam skleja przylegajace literaly
+    (``"recon" "ext2026"`` to jedna stala), a tu dodatkowo skladamy lancuchy
+    ``"a" + "b"``. To zamyka realne przypadki; obfuskacji przez chr() albo
+    base64 ta kontrola nie wykryje i nie udaje, ze wykrywa.
+    """
+    import ast
+
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return []
+
+    values: list[str] = []
+
+    def fold(node) -> Optional[str]:
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return node.value
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            left, right = fold(node.left), fold(node.right)
+            if left is not None and right is not None:
+                return left + right
+        return None
+
+    for node in ast.walk(tree):
+        folded = fold(node)
+        if folded:
+            values.append(folded)
+    return values
+
+
 def validate_source_file(name: str, source: Path) -> None:
     text = source.read_text(encoding="utf-8", errors="strict")
 
-    forbidden = [m for m in FORBIDDEN_MARKERS.get(name, ()) if m in text]
+    markers = FORBIDDEN_MARKERS.get(name, ())
+    forbidden = [m for m in markers if m in text]
+    if markers:
+        constants = _string_constants(text)
+        forbidden += [
+            m for m in markers
+            if m not in forbidden and any(m in value for value in constants)
+        ]
     if forbidden:
         raise BuildError(
             f"{name}: zawiera elementy zabronione w buildzie produkcyjnym: "
-            + ", ".join(forbidden))
+            + ", ".join(sorted(set(forbidden))))
 
     returned = [m for m in REMOVED_MARKERS.get(name, ()) if m in text]
     if returned:
         raise BuildError(
-            f"{name}: wrocily elementy usuniete na zyczenie wlasciciela "
-            "aplikacji (logowanie operatora): " + ", ".join(returned))
+            f"{name}: wrocily elementy, ktore zostaly USUNIETE swiadomie "
+            "(logowanie operatora albo mapa HWID): " + ", ".join(returned))
 
     missing = [m for m in REQUIRED_SAFETY_MARKERS.get(name, ()) if m not in text]
     if missing:
@@ -305,7 +456,6 @@ def run_release_preflight() -> None:
     validation = (
         "from station_config import StationConfig\n"
         "from product_profile import ProductCatalog\n"
-        "from hwid_map import HwidMap\n"
         "cfg = StationConfig()\n"
         "assert cfg.INTERLOCK_ENABLED, 'INTERLOCK_ENABLED musi byc true'\n"
         "assert cfg.AUTO_SAVE_RESULTS, 'AUTO_SAVE_RESULTS musi byc true'\n"
@@ -314,26 +464,39 @@ def run_release_preflight() -> None:
         "from security import verify_password\n"
         "assert verify_password('recon'+'ext2026', cfg.ADMIN_PASSWORD), "
         "'haslo standardowe stanowiska nie dziala'\n"
+        # Kontrola ZACHOWANIA, nie obecnosci napisu: samo szukanie literalu
+        # hasla wykrywa literowke, ale nie backdoora (sklejony literal
+        # przechodzil). Tu sprawdzamy, ze zle haslo faktycznie odpada.
+        "assert not verify_password('zle-haslo', cfg.ADMIN_PASSWORD), "
+        "'weryfikacja hasla przepuszcza dowolna wartosc'\n"
+        "assert not verify_password('', cfg.ADMIN_PASSWORD), "
+        "'puste haslo przechodzi weryfikacje'\n"
         "catalog = ProductCatalog()\n"
         "assert not catalog.errors, f'Odrzucone profile: {catalog.errors}'\n"
         "assert catalog.ids(), 'Brak profili produktow'\n"
-        "mapping = HwidMap(catalog).get_all()\n"
-        "unknown = sorted({e['product'] for e in mapping.values()} "
-        "- set(catalog.ids()))\n"
-        "assert not unknown, f'HWID wskazuja nieistniejace profile: {unknown}'\n"
-        # Pusta mapa jest dopuszczalna, ale TYLKO gdy zaden wlaczony profil
-        # nie jest identyfikowany z HWID. Inaczej stanowisko odrzucaloby
-        # kazdy skan - lepiej zatrzymac to na buildzie.
-        "orphan = sorted(p.product_id for p in catalog.all() "
-        "if p.requires_hwid and cfg.is_product_enabled(p.product_id) "
-        "and p.product_id not in {e['product'] for e in mapping.values()})\n"
-        "assert not orphan, f'Profile z identyfikacja HWID bez wpisow "
-        "w mapie: {orphan}'\n"
+        # Zaden wlaczony profil nie moze miec kroku bez progu obecnosci -
+        # bez niego pusty fixture zmierzylby zero i przeszedl jako PASS.
         "for profile in catalog.all():\n"
         "    for step in profile.steps:\n"
         "        assert step['presence_min_current'] > 0, profile.product_id\n"
-        "print(f'[PREFLIGHT] Profile {catalog.ids()} i mapa HWID "
-        "({len(mapping)} wpisow): OK')\n"
+        "enabled = [p for p in catalog.ids() if cfg.is_product_enabled(p)]\n"
+        "assert enabled, 'Zaden profil nie jest wlaczony na stanowisku'\n"
+        # K5: manifest sum profili jest generowany razem z wydaniem, zeby
+        # stanowisko startowalo ze zweryfikowanym katalogiem.
+        "from profile_integrity import ProfileIntegrity, save_manifest\n"
+        "integrity = ProfileIntegrity(cfg, catalog.directory)\n"
+        "if not integrity.external:\n"
+        "    save_manifest(integrity.path, catalog.directory, "
+        "note='manifest wygenerowany przy budowaniu wydania')\n"
+        "integrity.check()\n"
+        "assert not integrity.blocked, integrity.summary()\n"
+        # K3: pola tekstowe profilu nie moga wstrzyknac linii do raportu.
+        "for profile in catalog.all():\n"
+        "    for text in [profile.report_program, profile.display_name] + "
+        "[s['name'] for s in profile.steps]:\n"
+        "        assert not set(text) & set('\\r\\n\\t'), "
+        "f'znak sterujacy w polu raportu: {text!r}'\n"
+        "print(f'[PREFLIGHT] Profile {catalog.ids()}, wlaczone {enabled}: OK')\n"
     )
     run_command([sys.executable, "-c", validation], cwd=ROOT_DIR)
 
@@ -457,6 +620,15 @@ def prepare_staging() -> dict[str, Path]:
         resolved[name] = source
         print(f"[+] Dane edytowalne: {name}")
 
+    for name in OPTIONAL_DATA_FILES:
+        source = resolve_project_file(name, required=False)
+        if source is None:
+            print(f"[~] {name}: brak - manifest jest zewnetrzny albo "
+                  "kontrola sum profili nie jest uzywana")
+            continue
+        resolved[name] = source
+        print(f"[+] Dane edytowalne: {name}")
+
     products = ROOT_DIR / PRODUCTS_DIR
     if not products.is_dir() or not list(products.glob("*.json")):
         raise BuildError(
@@ -513,7 +685,7 @@ def copy_editable_files(resolved: dict[str, Path]) -> None:
     print_header("Kopiowanie konfiguracji i profili")
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    for name in EDITABLE_DATA_FILES:
+    for name in EDITABLE_DATA_FILES + OPTIONAL_DATA_FILES:
         source = resolved.get(name)
         if source:
             shutil.copy2(source, OUTPUT_DIR / name)
@@ -562,10 +734,10 @@ def show_summary() -> None:
     print(f"Rozmiar folderu  : {folder_size:.1f} MB")
     print("Podpis cyfrowy   : NIE")
     print(f"\n[!] Kopiuj caly folder '{APP_NAME}', nie samo EXE.")
-    print("[!] station_config.json, hwid_map.json i katalog products musza "
-          "pozostac obok EXE.")
-    print("[!] Haslo panelu inzynieryjnego: reconext2026 (skrot w "
-          "station_config.json).")
+    print("[!] station_config.json, profiles_manifest.json i katalog "
+          "products musza pozostac obok EXE.")
+    print("[!] Haslo panelu inzynieryjnego jest opisane w dokumentacji "
+          "wdrozeniowej; w plikach aplikacji jest tylko jego skrot.")
     print("[!] Ustaw uprawnienia NTFS: zapis do folderu tylko dla technologa.")
 
 

@@ -15,8 +15,7 @@
   "serial": {
     "allowed_lengths": [
       14
-    ],
-    "identify_by": "operator"
+    ]
   },
   "test_timeout_s": 60,
   "steps": [

@@ -107,9 +107,7 @@ NON_TERMINAL_JUDGMENTS = [112, 113, 114, 115]
 PASS_JUDGMENT = 116
 
 # Manual s. 5-19 (rozdz. 6.2): RS232 obsluguje wylacznie te predkosci.
-SUPPORTED_BAUDRATES = (300, 600, 1200, 2400, 4800, 9600, 19200)
 # Manual s. 5-19: FLOW CTRL. = NONE / SOFTWARE. Sprzetowy RTS/CTS nie istnieje.
-SUPPORTED_FLOW_CONTROL = ("NONE", "XON/XOFF")
 
 
 def _model(name: str, description: str, *, channels: int) -> dict[str, Any]:
