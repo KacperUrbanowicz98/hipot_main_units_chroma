@@ -115,12 +115,19 @@ HIDDEN_IMPORTS = [
 REQUIRED_SAFETY_MARKERS = {
     "safety_rules.py": (
         "ABSOLUTE_MIN_PRESENCE_MA = 0.010",
-        "MIN_IN_RANGE_SAMPLES = 2",
+        # Prog probek jest ustawieniem ruchomym (2 przy 19200, 1 przy 9600),
+        # wiec marker pilnuje nie WARTOSCI, tylko dna, ktorego nie wolno
+        # przekroczyc: bez ani jednego pomiaru obciazenia nie ma PASS-a.
+        "if MIN_IN_RANGE_SAMPLES < 1:",
         "def validate_step_pass_evidence",
         "def validate_cycle_pass_evidence",
         "def validate_channel_mask",
         # K3: pola tekstowe profilu nie moga dopisac wlasnej linii do raportu.
         "def validate_report_text",
+        # Dlugosc S/N: jedna droga dla pliku profilu i dla panelu, z twardym
+        # limitem liczby wariantow.
+        "def parse_serial_lengths",
+        "SERIAL_LENGTHS_MAX_COUNT",
     ),
     "hipot_device.py": (
         "_cycle_active_confirmed",
@@ -144,6 +151,15 @@ REQUIRED_SAFETY_MARKERS = {
         "def cycle_started_monotonic",
         # S10: numer kroku z SET? porownywany z badanym krokiem.
         "_check_step_number",
+        # 24.09.2026: zanik przejsciowki USB-RS232 nie moze konczyc sie
+        # utrata sztuki - jedno ponowienie po ponownym otwarciu portu.
+        "def reopen_port",
+        "_is_port_lost",
+        # 28.09.2026: sekwencja zatrzymana na oblanym kroku to FAIL wyrobu,
+        # a nie test niewazny - i kody WSZYSTKICH krokow ida do logu.
+        "class NonTerminalJudgment",
+        "_dump_step_judgments",
+        "_not_tested_entry",
     ),
     "test_screen.py": (
         "validate_step_pass_evidence",
@@ -158,6 +174,12 @@ REQUIRED_SAFETY_MARKERS = {
         "OVERCURRENT_STREAK_REQUIRED",
         # Przebieg bez wyniku zostawia slad w dzienniku audytowym.
         "_record_incomplete_run",
+        # 24.09.2026: stan koncowy testera musi sie potwierdzic, zanim
+        # siegniemy po wynik - jeden bledny pakiet udawal koniec cyklu.
+        "TERMINAL_CONFIRMATIONS",
+        "terminal_streak",
+        # Probki z petli potwierdzania startu naleza do kroku 1.
+        "on_measurement",
     ),
     "profile_integrity.py": (
         # K5: profil zmieniony poza panelem blokuje testowanie.
@@ -192,6 +214,11 @@ REQUIRED_SAFETY_MARKERS = {
         "askyesno",
         # Panel nie moze zapisac kroku, ktory nie przeszedl walidacji.
         "validate_step",
+        # Dlugosc S/N edytowana z panelu idzie przez te sama walidacje co
+        # plik profilu i zostawia wpis audytowy. Bez tego dalo by sie
+        # rozluznic jedyna kontrole numeru seryjnego bez sladu.
+        "parse_serial_lengths",
+        "SN_DLUGOSC",
     ),
     "settings_manager.py": (
         # Twarde bramki konfiguracji: interlocka i zapisu raportow nie da sie

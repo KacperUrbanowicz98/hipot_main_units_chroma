@@ -1,0 +1,49 @@
+Sztuki zatrzymane w trakcie sekwencji (kod JUDG 112), 23-28.09.2026
+Kolumna 'krok bez testu' to krok, ktory sie NIE wykonal.
+Port, ktory najprawdopodobniej oblal, to krok o jeden WCZESNIEJSZY.
+
+S/N                prob  krok bez testu  podejrzany port    pierwsza proba
+D211213A007053        1  2 (Ethernet 2)  Ethernet 1         2026-09-23 17:01:56
+D200196B012451        1  2 (Ethernet 2)  Ethernet 1         2026-09-23 22:10:02
+D210217E034421        2  5 (Modem     )  Ethernet 4         2026-09-23 23:17:00
+D201197A010645        2  5 (Modem     )  Ethernet 4         2026-09-24 00:26:30
+D21021BC012257        3  5 (Modem     )  Ethernet 4         2026-09-24 01:41:22
+D21120AB000093        1  4 (Ethernet 4)  Ethernet 3         2026-09-24 12:20:35
+D210224D006352        1  5 (Modem     )  Ethernet 4         2026-09-24 14:44:36
+D21023AB003051        1  5 (Modem     )  Ethernet 4         2026-09-24 15:15:13
+D210232B007170        1  5 (Modem     )  Ethernet 4         2026-09-24 15:19:17
+D20019BC018082        3  5 (Modem     )  Ethernet 4         2026-09-24 15:29:24
+D21023BA003798        1  5 (Modem     )  Ethernet 4         2026-09-24 15:38:25
+D21120BA001885        1  5 (Modem     )  Ethernet 4         2026-09-24 15:43:29
+D211219D001653        1  5 (Modem     )  Ethernet 4         2026-09-24 15:58:25
+D211217B019926        1  5 (Modem     )  Ethernet 4         2026-09-24 16:16:19
+D210244B002576        3  5 (Modem     )  Ethernet 4         2026-09-24 16:27:24
+D211213A001065        1  5 (Modem     )  Ethernet 4         2026-09-24 16:36:46
+D201197B011538        1  5 (Modem     )  Ethernet 4         2026-09-24 16:37:52
+D210217E027086        2  5 (Modem     )  Ethernet 4         2026-09-24 16:41:11
+D210215A034305        2  5 (Modem     )  Ethernet 4         2026-09-24 16:44:52
+D210217E030878        1  5 (Modem     )  Ethernet 4         2026-09-24 16:52:20
+D210222C004730        1  5 (Modem     )  Ethernet 4         2026-09-24 16:54:56
+D21023AB000055        1  5 (Modem     )  Ethernet 4         2026-09-24 18:48:49
+D201198E003060        1  3 (Ethernet 3)  Ethernet 2         2026-09-25 01:35:53
+D210231A005736        1  2 (Ethernet 2)  Ethernet 1         2026-09-25 04:42:12
+D21023CA018441        3  2 (Ethernet 2)  Ethernet 1         2026-09-25 13:55:40
+D201203A005937        1  2 (Ethernet 2)  Ethernet 1         2026-09-25 23:25:23
+D210233D002159        1  2 (Ethernet 2)  Ethernet 1         2026-09-26 01:48:43
+D21120AB008518        1  2 (Ethernet 2)  Ethernet 1         2026-09-26 02:58:19
+D211217D023207        1  5 (Modem     )  Ethernet 4         2026-09-26 03:16:38
+D21022BC020149        1  5 (Modem     )  Ethernet 4         2026-09-28 06:29:00
+D211219A005978        2  4 (Ethernet 4)  Ethernet 3         2026-09-28 09:34:54
+D201197E001337        1  3 (Ethernet 3)  Ethernet 2         2026-09-28 11:14:15
+D201198C019037        1  2 (Ethernet 2)  Ethernet 1         2026-09-28 11:17:35
+D211219A022651        1  5 (Modem     )  Ethernet 4         2026-09-28 11:24:55
+D210238C000212        1  5 (Modem     )  Ethernet 4         2026-09-28 11:41:45
+D211216A006762        1  3 (Ethernet 3)  Ethernet 2         2026-09-28 13:48:15
+D210238C006878        1  5 (Modem     )  Ethernet 4         2026-09-28 14:19:39
+D210232A001595        1  5 (Modem     )  Ethernet 4         2026-09-28 14:27:19
+D210216B001502        1  5 (Modem     )  Ethernet 4         2026-09-28 15:02:49
+D200199E003703        1  5 (Modem     )  Ethernet 4         2026-09-28 15:04:36
+D210244B002492        1  5 (Modem     )  Ethernet 4         2026-09-28 15:07:11
+D211219C007552        1  5 (Modem     )  Ethernet 4         2026-09-28 15:12:06
+
+RAZEM: 42 sztuk, 55 prob

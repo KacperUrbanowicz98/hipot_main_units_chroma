@@ -122,6 +122,7 @@ class DummyConfig:
     INTERLOCK_PORT = "COM11"
     INTERLOCK_BAUDRATE = 9600
     INTERLOCK_ENABLED = True
+    INTERLOCK_START_DELAY_S = 0.5
     STATION_ID = "HIPOT-TEST"
     LOG_DIR = "logs"
     PROFILE_MANIFEST_PATH = ""
@@ -245,11 +246,24 @@ class FakeMultiStepDevice:
         self.stop_calls = 0
         self._cycle_started = None
 
-    def start_test(self):
+    def start_test(self, on_measurement=None):
         # Przez modul test_screen, zeby zlapac zegar podstawiony przez test.
         import test_screen as _screen
 
         self._cycle_started = _screen.time.monotonic()
+        # Prawdziwy ChromaDevice oddaje tu pomiary zrobione w petli
+        # potwierdzania startu - naleza do kroku 1 tego samego cyklu.
+        self.start_measurements = []
+        if on_measurement is not None:
+            # Petla potwierdzania startu nie zjada budzetu odpytan atrapy:
+            # na prawdziwym testerze okno kroku 1 jest stale, a ten odczyt
+            # jest w nim DODATKOWA probka, nie zamiast innej.
+            before = self.poll
+            measurement = self.read_measurements()
+            self.poll = before
+            if measurement:
+                self.start_measurements.append(measurement)
+                on_measurement(measurement)
         return True
 
     def cycle_started_monotonic(self):
@@ -266,7 +280,16 @@ class FakeMultiStepDevice:
     def _total_polls(self):
         return self.polls_per_step * self.profile.step_count
 
+    # Numer odczytu, przy ktorym atrapa raz zglasza "STOPPED" mimo trwajacego
+    # cyklu - odwzorowanie blednie zlozonego pakietu przy 9600 bodach.
+    spurious_terminal_at = None
+
     def get_status(self):
+        if (self.spurious_terminal_at is not None
+                and self.poll == self.spurious_terminal_at
+                and self.poll < self._total_polls):
+            self.spurious_terminal_fired = True
+            return "STOPPED"
         return "RUNNING" if self.poll < self._total_polls else "STOPPED"
 
     def read_measurements(self):
@@ -328,7 +351,12 @@ class FakeMultiStepDevice:
 def test_step_and_channel_rules() -> None:
     step = validate_step(SR_PROFILE_DATA["steps"][0], 1, 8)
     assert step["channels"] == "HOOOOOOO"
-    assert step["presence_min_current"] == 0.2
+    # Prog obecnosci idzie za Low Limit profilu (02.10.2026: 0,035 mA wg
+    # oryginalnego programu SR203,204.stp), wiec test pilnuje regul, a nie
+    # wpisanej na sztywno wartosci.
+    assert step["presence_min_current"] == step["limit_low"]
+    assert step["presence_min_current"] >= ABSOLUTE_MIN_PRESENCE_MA
+    assert step["presence_min_current"] < step["limit_high"]
 
     # Zapis z separatorami (jak w oprogramowaniu Chromy) musi byc rownowazny.
     assert validate_channel_mask("O,O,H,O,O,O,O,O", 8, "test") == "OOHOOOOO"
@@ -407,8 +435,15 @@ def test_profile_catalog() -> None:
     assert [step["channels"] for step in sr.steps] == [
         "HOOOOOOO", "OHOOOOOO", "OOHOOOOO", "OOOHOOOO", "OOOOHOOO"]
     assert [step["voltage"] for step in sr.steps] == [1060, 1060, 1060, 1060, 1500]
-    assert [step["limit_low"] for step in sr.steps] == [0.2, 0.2, 0.2, 0.2, 0.05]
-    assert all(step["limit_high"] == 1.0 for step in sr.steps)
+    # 02.10.2026: limity przepisane z oryginalnego programu Chromy
+    # SR203,204.stp ze stanowiska obok. Poprzednie wartosci (Low 0,200 mA
+    # na Ethernecie) pochodzily z odczytu programu zastanego w testerze
+    # 26.08 i byly niemal szesc razy wyzsze - sztuki ciagnace ponizej
+    # 0,200 mA konczyly jako "test niewazny" przez caly wrzesien.
+    assert [step["limit_low"] for step in sr.steps] == [
+        0.035, 0.035, 0.035, 0.035, 0.02]
+    assert [step["limit_high"] for step in sr.steps] == [
+        1.0, 1.0, 1.0, 1.0, 1.5]
     assert sr.report_program == "SR203.204"
     # Numer seryjny: dokladnie 14 znakow, wylacznie wielkie litery i cyfry.
     assert sr.serial_lengths == (14,)
@@ -463,7 +498,10 @@ def test_pass_evidence_rules() -> None:
         ("prad powyzej Max Limit", dict(final_current_ma=1.5)),
         ("napiecie nizsze od 90% nastawy", dict(final_voltage=800,
                                                cycle_max_voltage=800)),
-        ("za malo probek w zakresie", dict(in_range_samples=1)),
+        # Prog jest tymczasowo obnizony na czas pracy na 9600 bodach, wiec
+        # test musi isc za stala, a nie za wpisana na sztywno jedynka.
+        ("za malo probek w zakresie",
+         dict(in_range_samples=MIN_IN_RANGE_SAMPLES - 1)),
         ("wykryte przekroczenie pradu w cyklu", dict(overcurrent_seen=True)),
     ):
         expect_error(
@@ -802,8 +840,20 @@ def test_multistep_result_gate() -> None:
             step_name="Modem", step_index=1, target_voltage=1500,
             effective_low_ma=0.02, high_limit_ma=1.5, final_voltage=1500,
             final_current_ma=0.2, cycle_max_voltage=1500,
-            in_range_samples=1, overcurrent_seen=False),
-        "jedna probka w zakresie")
+            in_range_samples=MIN_IN_RANGE_SAMPLES - 1, overcurrent_seen=False),
+        f"mniej niz {MIN_IN_RANGE_SAMPLES} probek w zakresie")
+
+    # Prog jest tymczasowo obnizony do 1 na czas pracy na 9600 bodach.
+    # Pojedyncza probka NIE jest jedynym dowodem - napiecie i prad koncowy
+    # musza sie nadal zgadzac. Ponizej: jedna probka w zakresie, ale
+    # napiecie ponizej 90% nastawy -> wynik dalej odrzucony.
+    expect_error(
+        lambda: validate_step_pass_evidence(
+            step_name="Modem", step_index=1, target_voltage=1500,
+            effective_low_ma=0.02, high_limit_ma=1.5, final_voltage=900,
+            final_current_ma=0.2, cycle_max_voltage=900,
+            in_range_samples=MIN_IN_RANGE_SAMPLES, overcurrent_seen=False),
+        "probka przy zanizonym napieciu")
 
 
 def test_single_step_profile_uses_last_registers() -> None:
@@ -1159,27 +1209,538 @@ def test_profile_step_reordering() -> None:
 
 
 
+def test_serial_length_is_editable_in_panel() -> None:
+    """Dozwolone dlugosci S/N ustawia sie w panelu, nie w pliku JSON.
+
+    Zgloszenie ze stanowiska 22.09.2026: numer seryjny ma zwykle 14 znakow,
+    ale trafiaja sie wyroby z 13 albo 15. Do tej pory jedyna droga byla
+    edycja ``products/<profil>.json`` Notatnikiem - czyli dokladnie ta droga,
+    ktora kontrola sum (K5) ma blokowac, i ktora nie zostawia sladu w
+    dzienniku audytowym.
+
+    Test pilnuje calej drogi: pole w panelu -> walidacja -> plik profilu ->
+    przyjmowanie numeru na ekranie operatora -> wpis audytowy.
+    """
+    from safety_rules import (
+        SERIAL_LENGTHS_MAX_COUNT,
+        describe_serial_lengths,
+        parse_serial_lengths,
+        validate_serial,
+    )
+
+    # --- 1. Sam parser: jedna droga dla pliku i dla panelu --------------- #
+    assert parse_serial_lengths("13, 14, 15") == (13, 14, 15)
+    assert parse_serial_lengths("15;13 14") == (13, 14, 15), "separatory"
+    assert parse_serial_lengths("14,14") == (14,), "duplikaty sie zwijaja"
+    assert parse_serial_lengths([14, 17]) == (14, 17), "lista z pliku profilu"
+
+    for bad in ("", "   ", "abc", "13.5", "3", "65", "12,13,14,15,16"):
+        try:
+            parse_serial_lengths(bad)
+        except SafetyValidationError:
+            pass
+        else:
+            raise AssertionError(f"parse_serial_lengths przyjelo {bad!r}")
+
+    # Limit liczby dlugosci jest twardy: dluga lista przestaje cokolwiek
+    # odrzucac, a dlugosc S/N jest JEDYNA kontrola po likwidacji mapy HWID.
+    at_limit = ",".join(str(10 + i) for i in range(SERIAL_LENGTHS_MAX_COUNT))
+    assert len(parse_serial_lengths(at_limit)) == SERIAL_LENGTHS_MAX_COUNT
+
+    assert describe_serial_lengths((14,)) == "14"
+    assert describe_serial_lengths((13, 14)) == "13 lub 14"
+    assert describe_serial_lengths((13, 14, 15)) == "13, 14 lub 15"
+
+    # --- 2. Profil z kilkoma dlugosciami przyjmuje kazda z nich ---------- #
+    for length in (13, 14, 15):
+        assert validate_serial("A" * length, (13, 14, 15))
+    for length in (12, 16):
+        try:
+            validate_serial("A" * length, (13, 14, 15))
+        except SafetyValidationError as exc:
+            assert "13, 14 lub 15" in str(exc), str(exc)
+        else:
+            raise AssertionError(f"przyjeto S/N o dlugosci {length}")
+
+    # --- 3. Pelna droga przez panel inzynieryjny ------------------------ #
+    import tkinter as tk
+
+    import admin_panel as admin_module
+    import profile_integrity  # noqa: F401  (panel importuje go leniwie)
+    from admin_panel import AdminPanel
+    from product_profile import resolve_serial
+
+    previous_cwd = os.getcwd()
+    with tempfile.TemporaryDirectory() as folder:
+        try:
+            work = Path(folder)
+            products = work / "products"
+            products.mkdir()
+            target = products / "SR203_SR204.json"
+            target.write_text(
+                (ROOT / "products" / "SR203_SR204.json").read_text(
+                    encoding="utf-8"), encoding="utf-8")
+            os.chdir(work)
+
+            catalog = ProductCatalog(products)
+            assert catalog.get("SR203_SR204").serial_lengths == (14,)
+
+            recorded: list[tuple] = []
+            dialogs = DummyMessagebox()
+            root = tk.Tk()
+            try:
+                root.withdraw()
+                with patch.object(admin_module, "messagebox", dialogs), \
+                        patch.object(admin_module, "audit_changes",
+                                     lambda event, before, after:
+                                     recorded.append((event, before, after))):
+                    panel = AdminPanel(root, DummyConfig(), catalog)
+                    panel.show()
+                    panel._profile_var.set("SR203_SR204")
+                    panel._load_profile()
+                    assert panel._serial_lengths_var.get() == "14", \
+                        panel._serial_lengths_var.get()
+
+                    # a) za duzo wariantow - zapis MUSI zostac odrzucony
+                    panel._serial_lengths_var.set("11,12,13,14,15")
+                    panel._save_profile()
+                    assert json.loads(target.read_text(encoding="utf-8")
+                                      )["serial"]["allowed_lengths"] == [14], \
+                        "profil zapisany mimo przekroczenia limitu dlugosci"
+                    assert "✗" in panel.profile_status.cget("text")
+
+                    # b) poprawna zmiana 14 -> 13, 14, 15
+                    panel._serial_lengths_var.set("13, 14, 15")
+                    panel._save_profile()
+            finally:
+                root.destroy()
+
+            saved = json.loads(target.read_text(encoding="utf-8"))
+            assert saved["serial"]["allowed_lengths"] == [13, 14, 15], saved
+
+            # Profil wczytany na nowo musi przyjac kazda z dlugosci.
+            profile = ProductCatalog(products).get("SR203_SR204")
+            assert profile.serial_lengths == (13, 14, 15)
+            for length in (13, 14, 15):
+                valid, outcome = resolve_serial(profile, "A" * length)
+                assert valid, outcome
+            valid, message = resolve_serial(profile, "A" * 12)
+            assert not valid and "13, 14 lub 15" in str(message), message
+
+            # Potwierdzenie pokazalo zmiane w formie "bylo -> bedzie"
+            # i ostrzeglo, ze przyjmowane beda trzy warianty.
+            confirmations = "\n".join(text for _title, text in dialogs.calls)
+            assert "Długość numeru seryjnego: 14 → 13, 14, 15" in confirmations, \
+                confirmations
+            assert "3 różnych długościach" in confirmations, confirmations
+
+            # Zmiana MUSI byc w dzienniku audytowym - to jedyny zapis,
+            # kto rozluznil kontrole numeru seryjnego.
+            serial_audits = [entry for entry in recorded
+                             if entry[0].endswith("/SN_DLUGOSC")]
+            assert serial_audits, [entry[0] for entry in recorded]
+            assert serial_audits[0][1] == {"DLUGOSCI": "14"}
+            assert serial_audits[0][2] == {"DLUGOSCI": "13, 14, 15"}
+        finally:
+            os.chdir(previous_cwd)
+
+    # --- 4. Pole nie moze cicho zniknac z panelu ------------------------ #
+    source = (ROOT / "admin_panel.py").read_text(encoding="utf-8")
+    for marker in ("_create_serial_box", "_serial_lengths_var",
+                   "parse_serial_lengths", "SN_DLUGOSC"):
+        assert marker in source, f"admin_panel.py: brak {marker!r}"
+    profile_tab = source[source.index("def _create_profile_tab"):]
+    assert "_create_serial_box" in profile_tab[:2500], \
+        "pole dlugosci S/N nie jest budowane w zakladce Profile"
+
+
+def test_station_failures_2026_09_23() -> None:
+    """Trzy tryby awarii z logow stanowiska serwisowego, 23-24.09.2026.
+
+    Na 942 potwierdzone cykle (901 PASS) stanowisko odrzucilo lub zgubilo
+    okolo 60 sztuk. Rozklad przyczyn z logu:
+
+      25x  start nieudany: WriteFile failed (PermissionError 13) - zanik
+           przejsciowki USB-RS232 w czasie postoju z otwarta klapa
+      32x  "Odrzucono PASS - Krok 1: tylko 1 pomiarow obciazenia" - krok 1
+           dostawal 2 probki, kroki 2-5 po 5
+       8x  "kod JUDG 112 nie jest koncowym wynikiem" - pojedynczy odczyt
+           statusu wygladal jak koniec cyklu po ~2,5 s z 12 s
+    """
+    import hipot_device as device_module
+    from hipot_device import ChromaDevice
+    from scpi_dialect import Dialect
+    from test_screen import TestScreen
+
+    # --- 1. Rozpoznanie zaniku portu ------------------------------------ #
+    # Komunikaty przepisane z logu stanowiska - o nie sie rozbija decyzja,
+    # czy ponawiac start, czy zglaszac awarie.
+    for text in (
+        "WriteFile failed (PermissionError(13, 'Urządzenie nie rozpoznaje "
+        "polecenia.', None, 22))",
+        "ClearCommError failed (PermissionError(13, 'Urzadzenie nie "
+        "rozpoznaje polecenia.', None, 22))",
+        "Access is denied.",
+    ):
+        assert ChromaDevice._is_port_lost(OSError(text)), text
+    # Blad merytoryczny testera NIE moze uruchamiac ponawiania.
+    for text in ("-113,\"Undefined header\"", "Brak potwierdzenia nowego cyklu"):
+        assert not ChromaDevice._is_port_lost(RuntimeError(text)), text
+
+    # --- 2. Ponowienie startu po odzyskaniu portu ----------------------- #
+    device = ChromaDevice("COM4", 9600, dialect=Dialect("19053"))
+    device.connected = True
+    device._configured_step_count = 5
+
+    attempts, reopened = [], []
+    port_error = OSError(
+        "WriteFile failed (PermissionError(13, 'Urządzenie nie rozpoznaje "
+        "polecenia.', None, 22))")
+
+    def flaky_start(on_measurement=None):
+        attempts.append(len(attempts) + 1)
+        if len(attempts) == 1:
+            raise port_error
+        return True
+
+    device._start_cycle_once = flaky_start
+    device.reopen_port = lambda: (reopened.append(True), True)[1]
+    assert device.start_test() is True, "start nie zostal ponowiony"
+    assert len(attempts) == 2, attempts
+    assert reopened, "port nie zostal otwarty od nowa"
+
+    # Gdy portu nie da sie odzyskac - awaria, bez trzeciej proby.
+    attempts.clear()
+    device.reopen_port = lambda: False
+    device.stop_test = lambda verify=True, lock_timeout=1.5: (True, "atrapa")
+    assert device.start_test() is False
+    assert len(attempts) == 1, attempts
+
+    # Blad NIEportowy nie uruchamia ponawiania - inaczej reconnect
+    # maskowalby realna usterke testera.
+    attempts.clear()
+    reopened.clear()
+    def broken_start(on_measurement=None):
+        attempts.append(1)
+        raise RuntimeError("-113,\"Undefined header\"")
+    device._start_cycle_once = broken_start
+    assert device.start_test() is False
+    assert len(attempts) == 1 and not reopened, (attempts, reopened)
+
+    # --- 3. Probki z petli potwierdzania licza sie do kroku 1 ----------- #
+    catalog = ProductCatalog(ROOT / "products")
+    profile = catalog.get("SR203_SR204")
+
+    def run(spurious_at=None, polls_per_step=4):
+        screen = TestScreen(None, DummyConfig(), FakeScan(profile))
+        screen.device = FakeMultiStepDevice(profile, [0.21] * 5,
+                                            polls_per_step=polls_per_step)
+        screen.device.spurious_terminal_at = spurious_at
+        screen.test_running = True
+        screen._test_aborted = False
+        screen._closed = False
+        screen._run_id = 1
+        callbacks, completed, errors = [], [], []
+        screen._post_ui = callbacks.append
+        screen._update_display = lambda: None
+        screen._highlight_current_step = lambda: None
+        screen._test_completed = lambda result, data: completed.append((result, data))
+        screen._test_error = errors.append
+        clock = FakeClock(tick=0.5)
+        screen.start_time = clock.monotonic()
+        with patch("test_screen.time.monotonic", clock.monotonic), \
+             patch("test_screen.time.sleep", clock.sleep):
+            screen._run_test_background(1)
+        for callback in callbacks:
+            callback()
+        return completed, errors, screen
+
+    completed, errors, screen = run()
+    assert [i[0] for i in completed] == ["PASS"], (completed, errors)
+    assert screen.device.start_measurements, \
+        "start_test nie oddal pomiarow z petli potwierdzania"
+    # Krok 1 ma o te probke wiecej niz pozostale kroki dostaly z petli
+    # glownej - dokladnie to, czego brakowalo na stanowisku.
+    assert screen._evidence[1].samples > screen.device.polls_per_step, (
+        screen._evidence[1].samples, screen.device.polls_per_step)
+
+    # --- 4. Pojedynczy falszywy "koniec cyklu" nie konczy testu --------- #
+    completed, errors, screen = run(spurious_at=3)
+    assert getattr(screen.device, "spurious_terminal_fired", False), \
+        "atrapa nie zglosila falszywego konca cyklu - test nic nie sprawdza"
+    assert [i[0] for i in completed] == ["PASS"], (completed, errors)
+    assert not errors, errors
+
+    source = (ROOT / "test_screen.py").read_text(encoding="utf-8")
+    for marker in ("TERMINAL_CONFIRMATIONS", "terminal_streak",
+                   "_start_after_lid_delay"):
+        assert marker in source, f"test_screen.py: brak {marker!r}"
+
+
+def test_halted_sequence_is_a_fail_not_an_invalid_test() -> None:
+    """Sekwencja zatrzymana na oblanym kroku to FAIL wyrobu.
+
+    Zgloszenie z logow stanowiska, 28.09.2026: 13 sztuk odrzuconych jako
+    "Test niewazny" z komunikatem "kod JUDG 112 nie jest koncowym wynikiem
+    produktu". Czas wystapienia pokrywal sie co do sekundy z granica krokow
+    (krok 2 - 3,1 s, krok 3 - 4,4 i 5,7 s, krok 4 - 6,9 s, krok 5 - 10,5-10,9 s),
+    czyli tester konczyl krok i NIE przechodzil do nastepnego. Kroki, ktore
+    sie nie wykonaly, maja w rejestrze 112 (STOP).
+
+    Jesli zatrzymanie poprzedzil krok bez zaliczenia - to jest FAIL wyrobu
+    i sztuka musi trafic na NOK. Aplikacja wyrzucala caly wynik, wiec przez
+    caly wrzesien nie padl ani jeden FAIL na 1381 cykli.
+
+    Jesli wszystkie wczesniejsze kroki zaliczyly - powod zatrzymania jest
+    nieznany i wynik nadal musi byc odrzucony.
+    """
+    from datetime import datetime
+
+    from hipot_device import ChromaDevice, NonTerminalJudgment
+    from report_writer import build_report_lines
+    from scpi_dialect import Dialect
+
+    catalog = ProductCatalog(ROOT / "products")
+    profile = catalog.get("SR203_SR204")
+    steps = profile.steps
+
+    def build_device(judgments):
+        """judgments: kod JUDG dla kolejnych krokow (None = blad odczytu)."""
+        device = ChromaDevice("COM4", 9600, dialect=Dialect("19053"))
+        device.connected = True
+        device._cycle_active_confirmed = True
+        device._cycle_started_monotonic = time.monotonic() - 12.0
+        device._cycle_id = 7
+        device.serial = DummySerial()
+        device._clear_input = lambda: None
+        device.query = lambda command, **kwargs: str(
+            judgments[int(re.search(r"STEP(\d+)", command).group(1)) - 1])
+        device._query_float = lambda command: 1.060
+        return device
+
+    # --- 1. Krok 2 oblany, kroki 3-5 nie wykonane ----------------------- #
+    # 18 = "AC Low Fail" wg tabeli kodow raportu.
+    device = build_device([116, 18, 112, 112, 112])
+    with patch.object(ChromaDevice, "_dump_step_judgments", lambda *a: None):
+        result, data = device.get_cycle_results(steps)
+
+    assert result == "FAIL", (result, data)
+    assert data.get("fresh_cycle") is True
+    assert len(data["steps"]) == 5, "raport musi opisywac wszystkie 5 portow"
+    assert [e["result"] for e in data["steps"]] == [
+        "PASS", "FAIL", "---", "---", "---"], [e["result"] for e in data["steps"]]
+    # Do raportu i na ekran idzie krok, ktory NAPRAWDE oblal, a nie pierwszy
+    # nieodczytany.
+    assert data["failed_step"] == "Ethernet 2", data["failed_step"]
+    assert data["error_code"] == "18", data["error_code"]
+
+    # Kroki niewykonane nie moga udawac pomiaru.
+    for entry in data["steps"][2:]:
+        assert entry["output_voltage"] == 0.0 and entry["measured_current"] == 0.0
+        assert entry["judgment_code"] == "112"
+
+    # --- 2. Raport: "---", a nie "Fail" na portach bez testu ------------ #
+    report = build_report_lines(
+        instrument_model="19053", program="SR203.204", serial="D211219A005978",
+        overall_result=result, steps=data["steps"],
+        profile_steps=[dict(s) for s in steps],
+        effective_low_ma=[profile.effective_low_ma(s) for s in steps],
+        now=datetime(2026, 9, 28, 9, 34, 53))
+    text = "\n".join(report)
+    assert "Total result:\tFail" in text
+    assert text.count("Result:\t\t---") == 3, text
+    assert text.count("Result:\t\tFail") == 1, text
+    assert "Result:\t\tPass" in text
+    assert "Error Description: AC Low Fail" in text, text
+
+    # --- 3. Zatrzymanie BEZ oblanego kroku nadal odrzucamy -------------- #
+    device = build_device([116, 116, 112, 112, 112])
+    dumped = []
+    with patch.object(ChromaDevice, "_dump_step_judgments",
+                      lambda self, s, exc: dumped.append(exc.index)):
+        result, data = device.get_cycle_results(steps)
+    assert result == "UNKNOWN", (result, data)
+    assert "JUDG 112" in str(data.get("error", "")), data
+    assert dumped == [3], dumped
+
+    # --- 4. Diagnostyka: kody WSZYSTKICH krokow trafiaja do logu -------- #
+    device = build_device([116, 116, 112, 112, 112])
+    buffer = io.StringIO()
+    with redirect_stdout(buffer):
+        device.get_cycle_results(steps)
+    printed = buffer.getvalue()
+    assert "Kody wszystkich krokow" in printed, printed
+    for name in ("Ethernet 1", "Ethernet 4", "Modem"):
+        assert name in printed, (name, printed)
+
+    # --- 5. Markery zrodlowe -------------------------------------------- #
+    source = (ROOT / "hipot_device.py").read_text(encoding="utf-8")
+    for marker in ("class NonTerminalJudgment", "_dump_step_judgments",
+                   "_not_tested_entry"):
+        assert marker in source, f"hipot_device.py: brak {marker!r}"
+
+
+def test_verdict_never_shows_previous_unit() -> None:
+    """Pasek werdyktu nie moze pokazywac wyniku POPRZEDNIEJ sztuki.
+
+    Zgloszenie z 22.09.2026: ``_set_verdict`` bylo wolane wylacznie przy
+    zakonczeniu, przerwaniu i przygotowaniu - nigdy przy starcie cyklu ani
+    przy przyjeciu kolejnego numeru seryjnego. Od drugiej sztuki w serii
+    najwiekszy napis na ekranie (64 pkt) przez caly czas trwania testu
+    pokazywal PASS/FAIL sztuki juz odlozonej. To ten sam blad, ktory mial
+    usunac W4 - operator odczytuje wynik nie tej sztuki, ktora trzyma.
+    """
+    from test_screen import TestScreen
+
+    catalog = ProductCatalog(ROOT / "products")
+    profile = catalog.get("SR203_SR204")
+    screen = TestScreen(None, DummyConfig(), FakeScan(profile))
+
+    verdicts: list[str] = []
+    screen._set_verdict = lambda text, color: verdicts.append(text)
+
+    class Device:
+        connected = True
+
+        def request_stop(self, lock_timeout=1.5):
+            return True, "atrapa"
+
+        def confirm_stopped(self, attempts=3):
+            return True, "atrapa"
+
+    screen.device = Device()
+    for name in ("status_label", "stop_button", "back_button",
+                 "next_sn_button", "start_button", "live_title",
+                 "voltage_label", "current_label", "time_label",
+                 "sn_display_label", "progress_canvas", "interlock_label",
+                 "interlock_frame", "storage_warning_label"):
+        setattr(screen, name, DummyWidget())
+    screen.progress_rect = object()
+    screen._reset_step_rows = lambda: None
+    screen._apply_step_results = lambda results: None
+    screen._refresh_history = lambda: None
+    screen._show_next_sn_dialog = lambda result: None
+    screen._queue_report = lambda result, steps: None
+    screen.parent = types.SimpleNamespace(after=lambda delay, cb: None,
+                                          after_cancel=lambda handle: None)
+    screen._post_ui = lambda callback: None
+
+    # --- sztuka nr 1 konczy sie wynikiem PASS ---------------------------- #
+    step_results = [
+        {"index": i, "name": step["name"], "result": "PASS",
+         "judgment_code": "116", "output_voltage": float(step["voltage"]),
+         "measured_current": 0.35}
+        for i, step in enumerate(profile.steps, start=1)
+    ]
+    screen._test_completed("PASS", {"steps": step_results, "failed_step": ""})
+    assert verdicts[-1] == "PASS", verdicts
+
+    # --- operator skanuje sztuke nr 2 ------------------------------------ #
+    # Juz samo przyjecie numeru musi zdjac werdykt poprzedniej sztuki:
+    # od tej chwili nic na ekranie nie dotyczy odlozonego wyrobu.
+    verdicts.clear()
+    screen._apply_new_serial(FakeScan(profile, serial="SR203000000002"))
+    assert verdicts, "przyjecie kolejnego S/N nie zdjelo werdyktu poprzedniej sztuki"
+    assert "PASS" not in verdicts[-1], verdicts
+
+    # --- start cyklu sztuki nr 2 ----------------------------------------- #
+    verdicts.clear()
+    screen._device_configured = True
+    screen._serial_ready_for_test = True
+    screen._valid_close_transition = True
+    screen._current_interlock_closed = True
+    screen._test_aborted = False
+    screen.interlock = types.SimpleNamespace(connected=True)
+    screen.test_thread = None
+    started: list = []
+    with patch.object(threading, "Thread",
+                      lambda *a, **k: types.SimpleNamespace(
+                          start=lambda: started.append(True), daemon=True)):
+        screen._start_test()
+    assert started, "cykl nie ruszyl - test sprawdzalby nie to, co trzeba"
+    assert verdicts, "start cyklu nie zdjal werdyktu poprzedniej sztuki"
+    assert "PASS" not in verdicts[-1], verdicts
+
+    # Markery zrodlowe: obie sciezki musza zostac.
+    source = (ROOT / "test_screen.py").read_text(encoding="utf-8")
+    start_block = source[source.index("def _start_test"):
+                         source.index("def _reset_cycle_state")]
+    assert "_set_verdict" in start_block, \
+        "_start_test nie kasuje werdyktu poprzedniej sztuki"
+    serial_block = source[source.index("def _apply_new_serial"):]
+    assert "_set_verdict" in serial_block[:1800], \
+        "_apply_new_serial nie kasuje werdyktu poprzedniej sztuki"
+
+
+def test_admin_panel_fits_on_station_screens() -> None:
+    """Panel inzynieryjny nie moze wystawac poza ekran stanowiska.
+
+    Rozmiar byl wpisany na sztywno w czterech miejscach, a wysrodkowanie
+    liczylo sie z polowy tych wymiarow. Po powiekszeniu okna do 1180x940
+    (22.09) wysrodkowania nie poprawiono i na 1920x1080 dolna krawedz
+    ladowala na y=1110, czyli 70 px pod obszarem roboczym. Okno jest
+    modalne (``grab_set``), wiec przycisk "Zapisz profil" schowany pod
+    paskiem zadan to slepy zaulek dla technologa.
+    """
+    from admin_panel import AdminPanel
+
+    panel = AdminPanel.__new__(AdminPanel)
+    TASKBAR = 48
+
+    for screen_w, screen_h in ((1920, 1080), (1680, 1050), (1600, 900),
+                               (1536, 864), (1366, 768), (1280, 1024)):
+        panel.parent = types.SimpleNamespace(
+            winfo_screenwidth=lambda w=screen_w: w,
+            winfo_screenheight=lambda h=screen_h: h)
+        width, height, x, y = panel._window_placement()
+
+        assert x >= 0 and y >= 0, (screen_w, screen_h, x, y)
+        assert x + width <= screen_w, (
+            f"{screen_w}x{screen_h}: panel wystaje w bok "
+            f"({x + width} > {screen_w})")
+        assert y + height <= screen_h - TASKBAR, (
+            f"{screen_w}x{screen_h}: dolna krawedz {y + height} pod paskiem "
+            f"zadan (obszar roboczy {screen_h - TASKBAR})")
+        # Wysrodkowanie ma wynikac z rozmiaru, a nie ze stalej.
+        assert abs(x - (screen_w - width) // 2) <= 1, (x, width, screen_w)
+
+    source = (ROOT / "admin_panel.py").read_text(encoding="utf-8")
+    assert "_window_placement" in source
+    for hardcoded in ('geometry("980x740")', "- 490", "- 370",
+                      'geometry("1180x940")'):
+        assert hardcoded not in source, \
+            f"admin_panel.py: wrocil sztywny rozmiar okna ({hardcoded})"
+
+
 def test_read_program_matches_station_readout() -> None:
     """Odczyt programu z testera + porownanie z profilem.
 
-    Odpowiedzi atrapy sa przepisane z sondy uruchomionej na FIZYCZNEJ Chromie
-    19053 (firmware 5.14, S/N 190530006638) na stanowisku SR203/SR204 —
-    zrzut z 26.08.2026. Dzieki temu test pilnuje, ze silnik nadal rozumie
-    format, ktory ten tester naprawde zwraca, a nie tylko ten z manuala.
+    FORMAT odpowiedzi jest przepisany z sondy uruchomionej na FIZYCZNEJ
+    Chromie 19053 (firmware 5.14, S/N 190530006638), zrzut z 26.08.2026 -
+    dzieki temu test pilnuje, ze silnik rozumie skladnie, ktora ten tester
+    naprawde zwraca, a nie tylko ta z manuala.
+
+    WARTOSCI natomiast pochodza z zatwierdzonego programu ``SR203,204.stp``
+    (zrzut ekranu z oprogramowania Chroma Hipot Tester, 02.10.2026).
+    Rozroznienie jest istotne: 26.08 odczytalem limity z programu zastanego
+    w testerze i przyjalem je za wzorzec. Byly o rzad wielkosci za wysokie
+    (Low 0,200 mA zamiast 0,035 mA), co przez caly wrzesien konczylo sie
+    odrzucaniem dobrych sztuk. Wzorcem jest program zatwierdzony, nie to,
+    co akurat siedzi w pamieci testera.
     """
     from hipot_device import ChromaDevice
 
     catalog = ProductCatalog(ROOT / "products")
     profile = catalog.get("SR203_SR204")
 
-    # Program odwzorowujacy profil: Ethernet 1-4 (1,06 kV, 1,0 / 0,2 mA,
-    # kanaly 1-4), Modem (1,5 kV, 1,0 / 0,05 mA, kanal 5).
+    # Program wg SR203,204.stp: Ethernet 1-4 (1,06 kV, High 1,0 / Low 0,035
+    # mA), Modem (1,5 kV, High 1,5 / Low 0,02 mA).
     STEPS = [
-        (1, 1.060e3, 1.0e-3, 2.0e-4, 1),
-        (2, 1.060e3, 1.0e-3, 2.0e-4, 2),
-        (3, 1.060e3, 1.0e-3, 2.0e-4, 3),
-        (4, 1.060e3, 1.0e-3, 2.0e-4, 4),
-        (5, 1.500e3, 1.0e-3, 5.0e-5, 5),
+        (1, 1.060e3, 1.0e-3, 3.5e-5, 1),
+        (2, 1.060e3, 1.0e-3, 3.5e-5, 2),
+        (3, 1.060e3, 1.0e-3, 3.5e-5, 3),
+        (4, 1.060e3, 1.0e-3, 3.5e-5, 4),
+        (5, 1.500e3, 1.5e-3, 2.0e-5, 5),
     ]
 
     def build(overrides=None):
@@ -1224,7 +1785,7 @@ def test_read_program_matches_station_readout() -> None:
     assert first["mode"] == "AC"
     assert abs(first["voltage"] - 1060.0) < 0.5
     assert abs(first["limit_high"] - 1.0e-3) < 1e-9
-    assert abs(first["limit_low"] - 2.0e-4) < 1e-9      # 0,200 mA, nie 0,035
+    assert abs(first["limit_low"] - 3.5e-5) < 1e-9      # 0,035 mA wg .stp
     assert first["channels_high"] == {1}
     assert first["channels_low"] == set()
     assert program["steps"][4]["channels_high"] == {5}
@@ -1240,9 +1801,12 @@ def test_read_program_matches_station_readout() -> None:
     diffs = _compare_profile_to_program(profile, moved)
     assert any("Channel HIGH" in d for d in diffs), diffs
 
-    # Zanizony Low Limit tez.
+    # Rozjechany Low Limit tez. Wartosc w nadpisaniu to DOKLADNIE ten blad,
+    # ktory przeszedl przez caly wrzesien: 2.0e-4 (0,200 mA) zamiast 3.5e-5
+    # (0,035 mA). Gdyby ktos uruchomil to porownanie 26.08, roznica bylaby
+    # widoczna od razu.
     lowered = build(overrides={
-        "SAFEty:STEP1:SET?": "1,AC,+1.060000E+03,+1.000000E-03,+3.500000E-05,"
+        "SAFEty:STEP1:SET?": "1,AC,+1.060000E+03,+1.000000E-03,+2.000000E-04,"
                              "+0.000000E+00,+1.000000E+00,+5.000000E-01,"
                              "+5.000000E-01,+0.000000E+00,(@(1)),(@(0))",
     }).read_program()
@@ -2252,6 +2816,11 @@ def main() -> None:
         test_next_serial_keeps_station_profile,
         test_enabled_products_gate,
         test_profile_step_reordering,
+        test_serial_length_is_editable_in_panel,
+        test_station_failures_2026_09_23,
+        test_halted_sequence_is_a_fail_not_an_invalid_test,
+        test_verdict_never_shows_previous_unit,
+        test_admin_panel_fits_on_station_screens,
         test_read_program_matches_station_readout,
         test_admin_panel_tabs,
         test_recovery_after_abort,
