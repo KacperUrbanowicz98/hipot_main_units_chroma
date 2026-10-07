@@ -1119,6 +1119,17 @@ class TestScreen:
                     "Brak znacznika czasu rozpoczecia cyklu w testerze")
             self.start_time = cycle_started
 
+            # Wyrob ze zwarciem wywraca tester szybciej, niz trwa jeden obrot
+            # odpytania - wtedy stan TESTING nie pada ani razu i petla nizej
+            # odrzucilaby gotowy werdykt jako "wynik bez potwierdzenia
+            # aktywnego cyklu". Tester potwierdzil cykl przejsciem statusu
+            # na PASS/FAIL, wiec dowod aktywnosci juz mamy.
+            if (hasattr(self.device, "cycle_ended_during_start")
+                    and self.device.cycle_ended_during_start()):
+                self._cycle_active_seen = True
+                print("[TEST] Tester zakonczyl cykl natychmiast - odczytuje "
+                      "werdykt bez czekania na stan aktywny")
+
             while (self.test_running and not self._test_aborted
                    and not self._closed and run_id == self._run_id):
                 now = time.monotonic()

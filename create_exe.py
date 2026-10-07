@@ -158,6 +158,10 @@ REQUIRED_SAFETY_MARKERS = {
         # 28.09.2026: sekwencja zatrzymana na oblanym kroku to FAIL wyrobu,
         # a nie test niewazny - i kody WSZYSTKICH krokow ida do logu.
         "class NonTerminalJudgment",
+        # 07.10.2026: wyrob ze zwarciem wywraca tester szybciej, niz trwa
+        # jeden obrot odpytania - werdykt rozpoznawany po PRZEJSCIU statusu.
+        "VERDICT_STATUSES",
+        "def cycle_ended_during_start",
         "_dump_step_judgments",
         "_not_tested_entry",
     ),

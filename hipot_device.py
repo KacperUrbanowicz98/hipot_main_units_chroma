@@ -44,6 +44,10 @@ _INT_RE = re.compile(r"^[+-]?\d+$")
 
 TERMINAL_STATUSES = {"STOPPED", "STOP", "PASS", "FAIL"}
 ACTIVE_STATUSES = {"TESTING", "RUNNING"}
+# Statusy, ktore sa WERDYKTEM o wyrobie, a nie samym zatrzymaniem.
+# "STOPPED" moze pochodzic z naszego wlasnego STOP przed startem, wiec nie
+# dowodzi niczego. "PASS"/"FAIL" powstaja wylacznie z cyklu testowego.
+VERDICT_STATUSES = {"PASS", "FAIL"}
 
 
 class DeviceError(RuntimeError):
@@ -858,6 +862,7 @@ class ChromaDevice:
         for attempt in (1, 2):
             self._cycle_active_confirmed = False
             self._cycle_started_monotonic = None
+            self._cycle_ended_during_start = False
             try:
                 return self._start_cycle_once(on_measurement)
             except Exception as exc:
@@ -891,6 +896,14 @@ class ChromaDevice:
             float(baseline.get("output_voltage", 0.0)) if baseline else 0.0
         )
 
+        # Status TUZ PRZED startem - po naszym STOP powinno byc "STOPPED".
+        # Sluzy za punkt odniesienia: jesli PO STARcie tester zglosi werdykt
+        # (PASS/FAIL), ktorego przed startem nie bylo, to znaczy, ze cykl
+        # sie wykonal - nawet jesli nie zdazylismy zlapac go w ruchu.
+        # Odczyt idzie PRZED zapisem SAFEty:STARt, wiec nie zabiera czasu
+        # oknu kroku 1.
+        status_before = self.get_status()
+
         with self._io_lock:
             self._clear_input()
             self._write_unlocked(self.dialect.command("keylock_on"))
@@ -910,9 +923,25 @@ class ChromaDevice:
 
         deadline = time.monotonic() + 3.0
         active_confirmed = False
+        ended_during_start = False
         while time.monotonic() < deadline:
-            if self.get_status() in ACTIVE_STATUSES:
+            status_now = self.get_status()
+            if status_now in ACTIVE_STATUSES:
                 active_confirmed = True
+                break
+            # Wyrob ze zwarciem wywraca tester w kilkanascie milisekund -
+            # szybciej, niz zdazymy go odpytac (cykl odpytania ~185 ms przy
+            # 9600 bodach). Nie widzimy wtedy ani stanu TESTING, ani napiecia
+            # powyzej 50 V, tylko gotowy werdykt. Zgloszenie z 07.10.2026:
+            # sztuka ze zwartym kondensatorem na Ethernecie 1 dziesiec razy
+            # z rzedu konczyla jako "awaria stanowiska", choc tester za kazdym
+            # razem orzekl FAIL.
+            if status_now in VERDICT_STATUSES and status_now != status_before:
+                ended_during_start = True
+                active_confirmed = True
+                print(f"[START] Cykl zakonczyl sie natychmiast: status "
+                      f"{status_before} -> {status_now}. Tester wydal werdykt "
+                      f"zanim zdazylismy zlapac cykl w ruchu.")
                 break
             measurement = self.read_measurements()
             if measurement:
@@ -937,6 +966,7 @@ class ChromaDevice:
             self.stop_test(verify=False)
             return False
 
+        self._cycle_ended_during_start = ended_during_start
         self._cycle_id += 1
         self._cycle_active_confirmed = True
         self._cycle_started_monotonic = command_started
@@ -945,6 +975,14 @@ class ChromaDevice:
 
     # Ponizej tego napiecia uznajemy, ze wysokie napiecie zgaslo.
     HV_OFF_VOLTAGE = 50.0
+
+    def cycle_ended_during_start(self) -> bool:
+        """Czy tester wydal werdykt jeszcze w petli potwierdzania startu.
+
+        Dla ekranu testowego to znaczy: cykl JEST wykonany, nie czekaj na
+        stan aktywny, ktory juz nie nastapi.
+        """
+        return bool(getattr(self, "_cycle_ended_during_start", False))
 
     def cycle_started_monotonic(self) -> Optional[float]:
         """Znacznik czasu zapisu SAFEty:STARt dla POTWIERDZONEGO cyklu.

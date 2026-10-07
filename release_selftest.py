@@ -1580,6 +1580,94 @@ def test_halted_sequence_is_a_fail_not_an_invalid_test() -> None:
         assert marker in source, f"hipot_device.py: brak {marker!r}"
 
 
+def test_instant_trip_is_a_fail_not_a_station_failure() -> None:
+    """Wyrob ze zwarciem = FAIL, a nie "awaria stanowiska".
+
+    Zgloszenie z 07.10.2026: sztuka D210243B035775 dziesiec razy z rzedu
+    konczyla jako ``TEST/AWARIA — Chroma nie potwierdzila rozpoczecia NOWEGO
+    cyklu``. Po wymianie kondensatora na porcie Ethernet 1 przeszla normalnie,
+    czyli wyrob BYL wadliwy, a aplikacja wskazala stanowisko.
+
+    Mechanizm: zwarcie wywraca tester w kilkanascie milisekund, a jeden obrot
+    odpytania przy 9600 bodach trwa ~185 ms. Petla potwierdzania startu nie
+    widziala ani stanu TESTING, ani napiecia powyzej 50 V - tylko gotowy
+    werdykt - wiec po 3 s uznawala, ze cykl w ogole nie ruszyl.
+
+    Rozstrzyga PRZEJSCIE statusu: przed STARtem tester stoi na STOPPED (bo
+    sami wysylamy STOP). Status PASS/FAIL moze powstac wylacznie z cyklu.
+    """
+    import hipot_device as device_module
+    from hipot_device import ChromaDevice
+    from scpi_dialect import Dialect
+
+    def build(statuses):
+        """statuses: kolejne odpowiedzi SAFEty:STATus?."""
+        device = ChromaDevice("COM4", 9600, dialect=Dialect("19053"))
+        device.connected = True
+        device._configured_step_count = 5
+        device.serial = DummySerial()
+        device._clear_input = lambda: None
+        device._write_unlocked = lambda command: None
+        queue = list(statuses)
+        state = {"last": "STOPPED"}
+
+        def fake_status():
+            if queue:
+                state["last"] = queue.pop(0)
+            return state["last"]
+
+        device.get_status = fake_status
+        device.query = lambda command, **kw: '+0,"No error"' if "ERR" in command else "1"
+        device.read_measurements = lambda: {"step": 1, "output_voltage": 0.0,
+                                            "measure_current": 0.0}
+        device.stop_test = lambda verify=True, lock_timeout=1.5: (True, "atrapa")
+        return device
+
+    # --- 1. Zwarcie: STOPPED przed startem, FAIL zaraz po --------------- #
+    device = build(["STOPPED", "FAIL"])
+    buffer = io.StringIO()
+    with redirect_stdout(buffer):
+        ok = device.start_test()
+    assert ok is True, "natychmiastowy werdykt nadal uznawany za brak startu"
+    assert device.cycle_ended_during_start() is True
+    assert device._cycle_active_confirmed is True
+    assert "zakonczyl sie natychmiast" in buffer.getvalue(), buffer.getvalue()
+
+    # --- 2. Cykl, ktory NIE ruszyl, nadal musi byc odrzucony ------------ #
+    # Tester caly czas stoi na STOPPED - zaden werdykt nie powstal.
+    device = build(["STOPPED"] + ["STOPPED"] * 60)
+    with redirect_stdout(io.StringIO()):
+        ok = device.start_test()
+    assert ok is False, "brak cyklu zostal uznany za wykonany"
+    assert device.cycle_ended_during_start() is False
+
+    # --- 3. Werdykt, ktory byl JUZ przed startem, nie jest dowodem ------ #
+    # Poprzednia sztuka oblala i status zostal na FAIL. Gdyby wystarczyl
+    # sam odczyt "FAIL", aplikacja przypisalaby staremu wynikowi nowy S/N.
+    device = build(["FAIL"] + ["FAIL"] * 60)
+    with redirect_stdout(io.StringIO()):
+        ok = device.start_test()
+    assert ok is False, "stary werdykt zostal uznany za wynik nowego cyklu"
+
+    # --- 4. Normalny cykl dalej potwierdza sie stanem aktywnym ---------- #
+    device = build(["STOPPED", "TESTING"])
+    with redirect_stdout(io.StringIO()):
+        ok = device.start_test()
+    assert ok is True and device.cycle_ended_during_start() is False
+
+    # --- 5. Ekran testowy nie odrzuca takiego werdyktu ------------------ #
+    source = (ROOT / "test_screen.py").read_text(encoding="utf-8")
+    assert "cycle_ended_during_start" in source, \
+        "test_screen nie uwzglednia cyklu zakonczonego w trakcie startu"
+    block = source[source.index("cycle_ended_during_start"):]
+    assert "_cycle_active_seen = True" in block[:600], block[:600]
+
+    device_source = (ROOT / "hipot_device.py").read_text(encoding="utf-8")
+    for marker in ("VERDICT_STATUSES", "status_before",
+                   "def cycle_ended_during_start"):
+        assert marker in device_source, f"hipot_device.py: brak {marker!r}"
+
+
 def test_verdict_never_shows_previous_unit() -> None:
     """Pasek werdyktu nie moze pokazywac wyniku POPRZEDNIEJ sztuki.
 
@@ -2819,6 +2907,7 @@ def main() -> None:
         test_serial_length_is_editable_in_panel,
         test_station_failures_2026_09_23,
         test_halted_sequence_is_a_fail_not_an_invalid_test,
+        test_instant_trip_is_a_fail_not_a_station_failure,
         test_verdict_never_shows_previous_unit,
         test_admin_panel_fits_on_station_screens,
         test_read_program_matches_station_readout,
