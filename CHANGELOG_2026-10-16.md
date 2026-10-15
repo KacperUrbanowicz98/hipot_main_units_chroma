@@ -24,6 +24,22 @@ ekranowi.
 Poza Windows (i gdyby odczyt się nie udał) zostaje oszacowanie
 `ekran − 60 × 90 px`, czyli tak jak dotąd.
 
+Odpowiedź systemu nie jest jednak przyjmowana na ślepo. **Pierwsza wersja
+tej poprawki przeszła u mnie, a padła na Twoim buildzie** — i słusznie.
+Win32 i Tk potrafią podać różne wymiary tego samego pulpitu (inna
+świadomość DPI procesu, zmiana rozdzielczości w trakcie pracy, zdalny
+pulpit), a okno liczyło się z większego z dwóch pomiarów: przy ekranie
+1680 px obszar wychodził 1920 px i prawa krawędź lądowała na 1760.
+Teraz z systemu bierzemy **położenie** (pasek z boku przesuwa środek
+pulpitu), ale rozmiar nigdy nie przekracza tego, co raportuje Tk. Przy
+rozbieżności wygrywa mniejszy: okno jest modalne, więc błąd w stronę
+„za dużo” jest dla technologa nieodwracalny, a w stronę „za mało”
+kosztuje kilkadziesiąt pikseli.
+
+Na monitorze 1920×1080 z paskiem zadań u dołu wychodzi okno
+**1600 × 871 px** w punkcie (130, 59) — dolna krawędź na 930, czyli
+110 px nad paskiem.
+
 ### 2. Zawartość zakładki była wyższa niż okno
 
 Samo zmieszczenie okna na ekranie nie wystarcza. Zakładka **Profile**
@@ -64,7 +80,10 @@ i przewijałoby ekran operatora).
 
 `test_admin_panel_fits_on_station_screens` liczy teraz wyśrodkowanie
 względem obszaru roboczego, a nie pełnego ekranu — przy pasku zadań z boku
-środek pulpitu nie jest środkiem ekranu.
+środek pulpitu nie jest środkiem ekranu. Doszedł do niego warunek, który
+złapał tamten błąd z Twojego builda: **obszar roboczy nigdy nie może wyjść
+poza ekran**. Sprawdzone też przez podstawienie Win32 zwracającego pulpit
+większy niż ekran — dokładnie Twój przypadek.
 
 Sprawdzone wizualnie na ekranie 1280×720: okno 1073×560, przycisk
 „Zapisz profil” osiągalny po przewinięciu.

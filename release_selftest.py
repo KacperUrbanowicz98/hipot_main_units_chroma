@@ -1796,6 +1796,20 @@ def test_admin_panel_fits_on_station_screens() -> None:
         # ze stalej ani z pelnego ekranu: przy pasku zadan z boku srodek
         # pulpitu nie jest srodkiem ekranu.
         area_x, area_y, area_w, area_h = panel._work_area()
+        # Obszar roboczy NIGDY nie moze wyjsc poza ekran. Na Windows podaje
+        # go system (SPI_GETWORKAREA), a system i Tk potrafia podac rozne
+        # wymiary tego samego pulpitu - inna swiadomosc DPI procesu, zmiana
+        # rozdzielczosci w trakcie pracy, zdalny pulpit. Bez tego warunku
+        # okno wyliczalo sie z wiekszego z dwoch pomiarow i wystawalo
+        # (build 16.10: obszar 1920 przy ekranie 1680, okno do x=1760).
+        assert area_x >= 0 and area_y >= 0, (screen_w, screen_h, area_x,
+                                             area_y)
+        assert area_x + area_w <= screen_w, (
+            f"{screen_w}x{screen_h}: obszar roboczy szerszy niz ekran "
+            f"({area_x + area_w} > {screen_w})")
+        assert area_y + area_h <= screen_h, (
+            f"{screen_w}x{screen_h}: obszar roboczy wyzszy niz ekran "
+            f"({area_y + area_h} > {screen_h})")
         assert width <= area_w and height <= area_h, (
             f"{screen_w}x{screen_h}: okno {width}x{height} wieksze niz "
             f"obszar roboczy {area_w}x{area_h}")

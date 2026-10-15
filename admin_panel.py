@@ -75,9 +75,20 @@ class AdminPanel:
         rozmiar ekranu, wiec kazde wyliczenie na jego podstawie to zgadywanie
         - a przy pasku zadan z boku albo o podwojnej wysokosci zgadywanie
         wychodzi poza ekran.
+
+        Odpowiedz systemu nie jest jednak przyjmowana na slepo. Tk i Win32
+        potrafia podac rozne wymiary tego samego pulpitu (inna swiadomosc
+        DPI procesu, zmiana rozdzielczosci w trakcie pracy, zdalny pulpit).
+        Gdy sie roznia, wygrywa MNIEJSZY: okno jest modalne, wiec blad
+        w strone "za duzo" jest nieodwracalny dla technologa, a w strone
+        "za malo" kosztuje kilkadziesiat pikseli. Wymiar z Tk niesie przy
+        tym ten sam zapas co oszacowanie awaryjne, bo Tk nie wie nic
+        o pasku zadan.
         """
         screen_w = max(640, self.parent.winfo_screenwidth())
         screen_h = max(480, self.parent.winfo_screenheight())
+        limit_w = max(320, screen_w - self.PANEL_SCREEN_MARGIN[0])
+        limit_h = max(240, screen_h - self.PANEL_SCREEN_MARGIN[1])
         try:
             import ctypes
 
@@ -92,13 +103,15 @@ class AdminPanel:
                 width = rect.right - rect.left
                 height = rect.bottom - rect.top
                 if width > 320 and height > 240:
-                    return rect.left, rect.top, width, height
+                    # Z systemu bierzemy POLOZENIE (pasek zadan z boku
+                    # przesuwa srodek pulpitu), ale rozmiar nie moze
+                    # przekroczyc tego, co raportuje Tk.
+                    return (rect.left, rect.top,
+                            min(width, limit_w), min(height, limit_h))
         except Exception:
             # Nie-Windows albo brak dostepu - lecimy na oszacowaniu nizej.
             pass
-        return (0, 0,
-                screen_w - self.PANEL_SCREEN_MARGIN[0],
-                screen_h - self.PANEL_SCREEN_MARGIN[1])
+        return 0, 0, limit_w, limit_h
 
     def _window_placement(self) -> tuple[int, int, int, int]:
         """Zwraca ``(szerokosc, wysokosc, x, y)`` mieszczace sie na ekranie."""
