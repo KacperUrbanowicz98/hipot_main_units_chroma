@@ -223,6 +223,16 @@ REQUIRED_SAFETY_MARKERS = {
         # rozluznic jedyna kontrole numeru seryjnego bez sladu.
         "parse_serial_lengths",
         "SN_DLUGOSC",
+        # Okno panelu liczy sie z OBSZARU ROBOCZEGO pulpitu, nie z pelnego
+        # ekranu - inaczej na stanowisku z paskiem zadan dolna krawedz
+        # (przycisk "Zapisz profil") lezy poza zasiegiem myszy, a okno jest
+        # modalne.
+        "SPI_GETWORKAREA",
+        "_window_placement",
+        # Zakladki maja wlasne przewijanie: na niskim ekranie zawartosc
+        # zakladki Profile jest wyzsza niz okno.
+        "_scroll_canvases",
+        "yview_scroll",
     ),
     "settings_manager.py": (
         # Twarde bramki konfiguracji: interlocka i zapisu raportow nie da sie

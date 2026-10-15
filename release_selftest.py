@@ -407,15 +407,18 @@ def test_profile_catalog() -> None:
         assert profile.serial_lengths == (14,), profile.product_id
         assert profile.allowed_models == ("19053",), profile.product_id
 
-    # SR213 ma w tabeli zrodlowej krok 'Ethernet 3' i 'ADSL' na TYM SAMYM
-    # kanale 6. To nie jest blad walidacji - fixture moze tak byc zrobiony -
-    # ale profil MUSI o tym ostrzegac, bo to typowy objaw pomylki przy
-    # przepisywaniu maski. Gdy kolizja zostanie wyjasniona i poprawiona,
-    # ten test upadnie i trzeba go zaktualizowac swiadomie.
+    # SR213: 15.10.2026 technolog usunal test portow Ethernet - zostaja
+    # wylacznie ADSL i DSL. Przy okazji zniknela kolizja kanalu 6, na ktora
+    # profil ostrzegal (krok 'Ethernet 3' i 'ADSL' mialy ten sam kanal).
+    # Dlatego teraz sprawdzamy OBIE rzeczy: ze Ethernetow nie ma i ze
+    # ostrzezenie o kolizji nie ma juz podstaw.
     sr213 = catalog.get("SR213")
-    assert sr213.step_count == 6
-    assert any("kanal 6" in w for w in sr213.channel_warnings), \
-        sr213.channel_warnings
+    assert [step["name"] for step in sr213.steps] == ["ADSL", "DSL"], \
+        [step["name"] for step in sr213.steps]
+    assert not any(step["name"].startswith("Ethernet") for step in sr213.steps)
+    assert not sr213.channel_warnings, sr213.channel_warnings
+    # Oba kroki ida po 1,5 kV - profil nie moze po cichu zgubic napiecia.
+    assert all(step["voltage"] == 1500 for step in sr213.steps)
     # Identyfikatory profili sa WIELKIMI literami, jak nazwy wyrobow.
     assert all(pid == pid.upper() for pid in catalog.ids()), catalog.ids()
     # Dopasowanie pozostaje niewrazliwe na wielkosc liter.
@@ -1789,8 +1792,17 @@ def test_admin_panel_fits_on_station_screens() -> None:
         assert y + height <= screen_h - TASKBAR, (
             f"{screen_w}x{screen_h}: dolna krawedz {y + height} pod paskiem "
             f"zadan (obszar roboczy {screen_h - TASKBAR})")
-        # Wysrodkowanie ma wynikac z rozmiaru, a nie ze stalej.
-        assert abs(x - (screen_w - width) // 2) <= 1, (x, width, screen_w)
+        # Wysrodkowanie ma wynikac z rozmiaru i OBSZARU ROBOCZEGO, a nie
+        # ze stalej ani z pelnego ekranu: przy pasku zadan z boku srodek
+        # pulpitu nie jest srodkiem ekranu.
+        area_x, area_y, area_w, area_h = panel._work_area()
+        assert width <= area_w and height <= area_h, (
+            f"{screen_w}x{screen_h}: okno {width}x{height} wieksze niz "
+            f"obszar roboczy {area_w}x{area_h}")
+        assert abs(x - (area_x + (area_w - width) // 2)) <= 1, (x, width,
+                                                                area_w)
+        assert abs(y - (area_y + (area_h - height) // 2)) <= 1, (y, height,
+                                                                 area_h)
 
     source = (ROOT / "admin_panel.py").read_text(encoding="utf-8")
     assert "_window_placement" in source
@@ -1798,6 +1810,90 @@ def test_admin_panel_fits_on_station_screens() -> None:
                       'geometry("1180x940")'):
         assert hardcoded not in source, \
             f"admin_panel.py: wrocil sztywny rozmiar okna ({hardcoded})"
+    # Na Windows obszar roboczy ma dac system, nie Tk: tylko on wie,
+    # gdzie stoi pasek zadan i jak jest wysoki.
+    assert "SPI_GETWORKAREA" in source, \
+        "admin_panel.py: obszar roboczy liczony na oko zamiast z systemu"
+
+
+def test_admin_panel_tabs_scroll_when_screen_is_short() -> None:
+    """Zakladki panelu musza dac sie przewinac.
+
+    Samo zmieszczenie okna w ekranie nie wystarcza. Na 1366x768 przy
+    skalowaniu Windows 125% obszar roboczy to ~1093x566, wiec na tresc
+    zakladki zostaje ~450 px - a zakladka Profile potrzebuje ponad 700.
+    Okno jest modalne, wiec przyciski ponizej krawedzi sa nieosiagalne.
+    Zakladka ma wiec wlasne plotno z pionowym paskiem; pasek pojawia sie
+    tylko wtedy, gdy tresc sie nie miesci.
+    """
+    import tkinter as tk
+    from tkinter import ttk
+    from admin_panel import AdminPanel
+
+    source = (ROOT / "admin_panel.py").read_text(encoding="utf-8")
+    block = source[source.index("def _tab(self"):source.index("def _wheel_canvas")]
+    assert "tk.Canvas" in block and "Scrollbar" in block, \
+        "_tab nie tworzy przewijanej zakladki"
+    assert "grid_remove" in block, \
+        "_tab pokazuje pasek przewijania zawsze, zamiast gdy jest potrzebny"
+    assert "itemconfigure" in block, \
+        "_tab nie dociaga szerokosci tresci do plotna - pack(fill=X) sie zwinie"
+    # bind_all zostaje w interpreterze po zamknieciu panelu i przewijalby
+    # ekran operatora.
+    assert ".bind_all(" not in source, \
+        "admin_panel.py: kolko myszy podpiete globalnie (bind_all)"
+    assert "self.window.minsize(" in source, \
+        "okno panelu nie ma dolnej granicy rozmiaru"
+
+    root = tk.Tk()
+    try:
+        # Bez withdraw(): okno niezmapowane ma wysokosc 1 px, wiec kazda
+        # tresc "nie miesci sie" i test nie sprawdzilby niczego.
+        root.geometry("600x400+0+0")
+        panel = AdminPanel.__new__(AdminPanel)
+        panel.parent = root
+        panel.config = types.SimpleNamespace(COLOR_WHITE="#FFFFFF")
+        panel._scroll_canvases = []
+        panel.notebook = ttk.Notebook(root)
+
+        inner = panel._tab("Proba")
+        assert isinstance(inner.master, tk.Canvas), \
+            "_tab zwraca ramke spoza plotna - zakladka sie nie przewinie"
+        canvas = inner.master
+        assert canvas in panel._scroll_canvases
+
+        # Tresc wyzsza niz plotno: pasek ma sie pokazac.
+        tall = tk.Frame(inner, height=4000, width=200)
+        tall.pack(fill=tk.BOTH, expand=True)
+        panel.notebook.pack(fill=tk.BOTH, expand=True)
+        root.geometry("600x400")
+        root.update_idletasks()
+        root.update()
+
+        bar = [child for child in canvas.master.winfo_children()
+               if isinstance(child, ttk.Scrollbar)][0]
+        assert bar.winfo_manager() == "grid", \
+            "tresc wyzsza niz okno, a paska przewijania nie ma"
+
+        # Tresc nizsza niz plotno: pasek ma zniknac.
+        tall.configure(height=20)
+        root.update_idletasks()
+        root.update()
+        assert bar.winfo_manager() == "", \
+            "pasek przewijania zostal, mimo ze tresc sie miesci"
+        tall.configure(height=4000)
+        root.update_idletasks()
+        root.update()
+
+        # Kolko myszy nad Treeview nie moze ruszac plotna zakladki -
+        # przewijaloby sie dwa razy naraz.
+        tree = ttk.Treeview(inner, columns=("a",), show="headings")
+        tree.pack()
+        root.update_idletasks()
+        assert panel._wheel_canvas(tree) is None
+        assert panel._wheel_canvas(tall) is canvas
+    finally:
+        root.destroy()
 
 
 def test_read_program_matches_station_readout() -> None:
@@ -2204,7 +2300,12 @@ def test_profile_choice_is_explicit() -> None:
         app._on_profile_selected()
         assert app.profile_banner_title.cget("text") == "SR213"
         summary = app.profile_info_label.cget("text")
-        assert "1.06 kV" in summary and "1.50 kV" in summary, summary
+        # Pasek musi pokazac KAZDE napiecie, ktore wystepuje w profilu -
+        # liczone z profilu, a nie wpisane na sztywno, zeby test przezyl
+        # zmiane zestawu krokow (15.10.2026 wypadly z SR213 Ethernety).
+        profile = app._profile_choices[label]
+        for step in profile.steps:
+            assert f"{step['voltage'] / 1000:.2f} kV" in summary, (step, summary)
         assert "kanały" in summary, summary
 
         # Po wskazaniu profilu ten sam numer przechodzi.
@@ -2910,6 +3011,7 @@ def main() -> None:
         test_instant_trip_is_a_fail_not_a_station_failure,
         test_verdict_never_shows_previous_unit,
         test_admin_panel_fits_on_station_screens,
+        test_admin_panel_tabs_scroll_when_screen_is_short,
         test_read_program_matches_station_readout,
         test_admin_panel_tabs,
         test_recovery_after_abort,

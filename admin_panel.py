@@ -50,6 +50,9 @@ class AdminPanel:
         self.window: Optional[tk.Toplevel] = None
         self._edited_steps: list[dict[str, Any]] = []
         self._edited_profile: Optional[ProductProfile] = None
+        # Plotna przewijanych zakladek - potrzebne, zeby kolko myszy
+        # trafialo w te zakladke, nad ktora stoi kursor.
+        self._scroll_canvases: list[tk.Canvas] = []
 
     # Rozmiar panelu. Zakladka Profile ma tabele o 12 kolumnach, wiec 980 px
     # bylo za ciasne. Sztywna wartosc tez nie jest rozwiazaniem: stanowiska
@@ -57,28 +60,63 @@ class AdminPanel:
     # 1536x864 zamiast 1920x1080. Okno wyliczane ze skali ekranu nigdy nie
     # schowa przycisku "Zapisz profil" pod paskiem zadan.
     PANEL_SCALE = 0.88
-    PANEL_MIN_SIZE = (980, 700)
+    # Rozmiar PREFEROWANY, nie gwarantowany - ekran zawsze wygrywa.
+    PANEL_MIN_SIZE = (900, 560)
     PANEL_MAX_SIZE = (1600, 1000)
-    # Zapas na pasek zadan i belke tytulowa okna.
+    # Zapas na belke tytulowa okna i obramowanie, gdy nie znamy obszaru
+    # roboczego systemu.
     PANEL_SCREEN_MARGIN = (60, 90)
+
+    def _work_area(self) -> tuple[int, int, int, int]:
+        """Obszar roboczy pulpitu: ``(x, y, szerokosc, wysokosc)``.
+
+        Na Windows pytamy system wprost (``SPI_GETWORKAREA``), bo tylko on
+        wie, gdzie stoi pasek zadan i jak jest wysoki. Tk zna wylacznie pelny
+        rozmiar ekranu, wiec kazde wyliczenie na jego podstawie to zgadywanie
+        - a przy pasku zadan z boku albo o podwojnej wysokosci zgadywanie
+        wychodzi poza ekran.
+        """
+        screen_w = max(640, self.parent.winfo_screenwidth())
+        screen_h = max(480, self.parent.winfo_screenheight())
+        try:
+            import ctypes
+
+            class RECT(ctypes.Structure):
+                _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long),
+                            ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
+
+            rect = RECT()
+            SPI_GETWORKAREA = 0x0030
+            if ctypes.windll.user32.SystemParametersInfoW(
+                    SPI_GETWORKAREA, 0, ctypes.byref(rect), 0):
+                width = rect.right - rect.left
+                height = rect.bottom - rect.top
+                if width > 320 and height > 240:
+                    return rect.left, rect.top, width, height
+        except Exception:
+            # Nie-Windows albo brak dostepu - lecimy na oszacowaniu nizej.
+            pass
+        return (0, 0,
+                screen_w - self.PANEL_SCREEN_MARGIN[0],
+                screen_h - self.PANEL_SCREEN_MARGIN[1])
 
     def _window_placement(self) -> tuple[int, int, int, int]:
         """Zwraca ``(szerokosc, wysokosc, x, y)`` mieszczace sie na ekranie."""
-        screen_w = max(640, self.parent.winfo_screenwidth())
-        screen_h = max(480, self.parent.winfo_screenheight())
+        area_x, area_y, area_w, area_h = self._work_area()
 
-        width = int(screen_w * self.PANEL_SCALE)
-        height = int(screen_h * self.PANEL_SCALE)
+        width = int(area_w * self.PANEL_SCALE)
+        height = int(area_h * self.PANEL_SCALE)
         width = max(self.PANEL_MIN_SIZE[0], min(self.PANEL_MAX_SIZE[0], width))
         height = max(self.PANEL_MIN_SIZE[1], min(self.PANEL_MAX_SIZE[1], height))
 
-        # Ekran wygrywa z minimum: lepiej ciasny panel niz przyciski pod
-        # paskiem zadan, bo okno jest modalne (grab_set).
-        width = min(width, screen_w - self.PANEL_SCREEN_MARGIN[0])
-        height = min(height, screen_h - self.PANEL_SCREEN_MARGIN[1])
+        # Obszar roboczy wygrywa z rozmiarem preferowanym ZAWSZE. Okno jest
+        # modalne (grab_set), wiec cokolwiek wyjdzie poza ekran, jest dla
+        # technologa nieosiagalne.
+        width = min(width, area_w)
+        height = min(height, area_h)
 
-        x = max(0, (screen_w - width) // 2)
-        y = max(0, (screen_h - height) // 2 - 20)
+        x = max(area_x, area_x + (area_w - width) // 2)
+        y = max(area_y, area_y + (area_h - height) // 2)
         return width, height, x, y
 
     # ------------------------------------------------------------------ #
@@ -92,6 +130,11 @@ class AdminPanel:
         self.window.grab_set()
         self.window.update_idletasks()
         self.window.geometry(f"{width}x{height}+{x}+{y}")
+        # Technolog moze zmniejszyc okno do wlasnych potrzeb - zakladki
+        # maja przewijanie, wiec nic sie nie chowa. Dolna granica jest
+        # tylko po to, zeby okna nie dalo sie zwinac do paska tytulu.
+        self.window.resizable(True, True)
+        self.window.minsize(min(640, width), min(400, height))
 
         self._create_header()
         container = tk.Frame(self.window, bg=self.config.COLOR_BG)
@@ -105,6 +148,7 @@ class AdminPanel:
         self._create_logs_tab()
         self._create_diagnostics_tab()
         self._create_footer()
+        self._bind_mousewheel(self.window)
 
     def _create_header(self) -> None:
         header = tk.Frame(self.window, bg=self.config.COLOR_PRIMARY, height=54)
@@ -165,10 +209,105 @@ class AdminPanel:
                      fg="#666666", font=("Arial", 9, "italic"),
                      justify="center").pack(pady=(0, 10))
 
+    # Widgety, ktore maja wlasne przewijanie - kolko myszy nad nimi nie
+    # moze ruszac plotnem zakladki, bo przewijaloby sie dwa razy naraz.
+    _WHEEL_OPAQUE = ("Treeview", "Text", "Listbox", "TScrollbar", "Scrollbar")
+
     def _tab(self, label: str) -> tk.Frame:
-        frame = tk.Frame(self.notebook, bg=self.config.COLOR_WHITE)
-        self.notebook.add(frame, text=f"  {label}  ")
-        return frame
+        """Zakladka z pionowym przewijaniem.
+
+        Okno panelu nigdy nie wychodzi poza obszar roboczy pulpitu (patrz
+        ``_window_placement``), wiec na niskim ekranie - 1366x768, a przy
+        skalowaniu Windows 125% efektywnie 1093x614 - zawartosc zakladki
+        jest wyzsza niz okno. Bez przewijania dolne przyciski ("Zapisz
+        profil", "Zapisz ustawienia") sa poza zasiegiem, a okno jest
+        modalne, wiec technolog nie ma jak do nich dotrzec.
+
+        Pasek przewijania pojawia sie wylacznie wtedy, gdy zawartosc sie
+        nie miesci - na duzym monitorze zakladka wyglada jak wczesniej.
+        """
+        outer = tk.Frame(self.notebook, bg=self.config.COLOR_WHITE)
+        self.notebook.add(outer, text=f"  {label}  ")
+        outer.grid_rowconfigure(0, weight=1)
+        outer.grid_columnconfigure(0, weight=1)
+
+        canvas = tk.Canvas(outer, bg=self.config.COLOR_WHITE,
+                           highlightthickness=0, borderwidth=0,
+                           takefocus=0)
+        bar = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=bar.set)
+        canvas.grid(row=0, column=0, sticky="nsew")
+        bar.grid(row=0, column=1, sticky="ns")
+        bar.grid_remove()
+
+        inner = tk.Frame(canvas, bg=self.config.COLOR_WHITE)
+        item = canvas.create_window((0, 0), window=inner, anchor="nw")
+
+        def _resync(_event=None) -> None:
+            # Szerokosc okna wewnetrznego musi isc za plotnem, inaczej
+            # wszystkie pack(fill=X) skurcza sie do szerokosci tresci.
+            canvas.itemconfigure(item, width=canvas.winfo_width())
+            canvas.configure(scrollregion=canvas.bbox("all"))
+            overflow = inner.winfo_reqheight() > canvas.winfo_height()
+            # winfo_manager(), nie winfo_ismapped(): przed pokazaniem okna
+            # nic nie jest zmapowane, wiec ismapped klamie i pasek nigdy
+            # by sie nie pojawil.
+            shown = bar.winfo_manager() == "grid"
+            if overflow and not shown:
+                bar.grid()
+            elif not overflow and shown:
+                bar.grid_remove()
+                canvas.yview_moveto(0.0)
+
+        inner.bind("<Configure>", _resync)
+        canvas.bind("<Configure>", _resync)
+        self._scroll_canvases.append(canvas)
+        return inner
+
+    def _wheel_canvas(self, widget) -> Optional[tk.Canvas]:
+        """Plotno, ktore ma zareagowac na kolko nad ``widget`` (albo None)."""
+        while widget is not None:
+            try:
+                if widget.winfo_class() in self._WHEEL_OPAQUE:
+                    return None
+            except tk.TclError:
+                return None
+            for canvas in self._scroll_canvases:
+                if widget is canvas:
+                    return canvas
+            widget = getattr(widget, "master", None)
+        return None
+
+    def _on_mousewheel(self, event) -> None:
+        canvas = self._wheel_canvas(getattr(event, "widget", None))
+        if canvas is None or not canvas.winfo_ismapped():
+            return
+        number = getattr(event, "num", 0)
+        if number == 4:
+            step = -1
+        elif number == 5:
+            step = 1
+        else:
+            step = -1 if getattr(event, "delta", 0) > 0 else 1
+        canvas.yview_scroll(step, "units")
+
+    def _bind_mousewheel(self, widget) -> None:
+        """Podpina kolko myszy do calego drzewa panelu.
+
+        Swiadomie bez ``bind_all``: ten panel jest modalny, ale ``all``
+        zostaje w interpreterze takze po jego zamknieciu i przewijaloby
+        ekran operatora.
+        """
+        try:
+            opaque = widget.winfo_class() in self._WHEEL_OPAQUE
+        except tk.TclError:
+            return
+        if not opaque:
+            widget.bind("<MouseWheel>", self._on_mousewheel, add="+")
+            widget.bind("<Button-4>", self._on_mousewheel, add="+")
+            widget.bind("<Button-5>", self._on_mousewheel, add="+")
+        for child in widget.winfo_children():
+            self._bind_mousewheel(child)
 
     # ================================================================== #
     # STANOWISKO
@@ -578,6 +717,14 @@ class AdminPanel:
         for column, width in zip(columns, widths):
             self.steps_tree.heading(column, text=column)
             self.steps_tree.column(column, width=width, anchor="center")
+        # Tabela ma 12 kolumn (~1060 px). Na weskim monitorze ostatnie
+        # kolumny - "Channel" i "Obecność" - wychodza poza okno, a to
+        # wlasnie one byly zrodlem pomylek w profilach. Poziomy pasek
+        # pokazuje sie sam, gdy kolumny sie nie mieszcza.
+        steps_xbar = ttk.Scrollbar(table_frame, orient="horizontal",
+                                   command=self.steps_tree.xview)
+        self.steps_tree.configure(xscrollcommand=steps_xbar.set)
+        steps_xbar.pack(side=tk.BOTTOM, fill=tk.X)
         self.steps_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         self.steps_tree.bind("<Double-1>", lambda event: self._edit_step())
 
