@@ -22,6 +22,7 @@ from tkinter import filedialog, messagebox, ttk
 from typing import Any, Optional
 
 from product_profile import ProductProfile
+from station_config import ui
 from safety_rules import (
     ABSOLUTE_MIN_PRESENCE_MA,
     SERIAL_LENGTHS_MAX_COUNT,
@@ -151,7 +152,7 @@ class AdminPanel:
 
         self._create_header()
         container = tk.Frame(self.window, bg=self.config.COLOR_BG)
-        container.pack(expand=True, fill=tk.BOTH, padx=10, pady=(8, 0))
+        container.pack(expand=True, fill=tk.BOTH, padx=ui.px(10), pady=ui.px((8, 0)))
         self.notebook = ttk.Notebook(container)
         self.notebook.pack(expand=True, fill=tk.BOTH)
 
@@ -164,27 +165,29 @@ class AdminPanel:
         self._bind_mousewheel(self.window)
 
     def _create_header(self) -> None:
-        header = tk.Frame(self.window, bg=self.config.COLOR_PRIMARY, height=54)
+        header = tk.Frame(self.window, bg=self.config.COLOR_PRIMARY,
+                          height=ui.px(54))
         header.pack(fill=tk.X)
         header.pack_propagate(False)
         tk.Label(header, text="Panel inżynieryjny", bg=self.config.COLOR_PRIMARY,
-                 fg=self.config.COLOR_WHITE, font=("Arial", 16, "bold")).pack(
-                     side=tk.LEFT, padx=20)
+                 fg=self.config.COLOR_WHITE, font=ui.font(16, "bold")).pack(
+                     side=tk.LEFT, padx=ui.px(20))
         tk.Button(header, text="Zamknij", bg=self.config.COLOR_ERROR,
-                  fg=self.config.COLOR_WHITE, font=("Arial", 10, "bold"),
+                  fg=self.config.COLOR_WHITE, font=ui.font(10, "bold"),
                   relief=tk.FLAT, cursor="hand2",
-                  command=self.window.destroy).pack(side=tk.RIGHT, padx=15, pady=12)
+                  command=self.window.destroy).pack(side=tk.RIGHT, padx=ui.px(15), pady=ui.px(12))
 
     def _create_footer(self) -> None:
-        footer = tk.Frame(self.window, bg=self.config.COLOR_PRIMARY, height=32)
+        footer = tk.Frame(self.window, bg=self.config.COLOR_PRIMARY,
+                          height=ui.px(32))
         footer.pack(side=tk.BOTTOM, fill=tk.X)
         footer.pack_propagate(False)
         tk.Label(footer, text=self.config.footer_left(),
                  bg=self.config.COLOR_PRIMARY, fg=self.config.COLOR_WHITE,
-                 font=("Arial", 9, "bold")).pack(side=tk.LEFT, padx=15, pady=7)
+                 font=ui.font(9, "bold")).pack(side=tk.LEFT, padx=ui.px(15), pady=ui.px(7))
         tk.Label(footer, text="Autor: Kacper Urbanowicz",
                  bg=self.config.COLOR_PRIMARY, fg=self.config.COLOR_WHITE,
-                 font=("Arial", 9, "bold")).pack(side=tk.RIGHT, padx=15, pady=7)
+                 font=ui.font(9, "bold")).pack(side=tk.RIGHT, padx=ui.px(15), pady=ui.px(7))
 
     # ------------------------------------------------------------------ #
     # POMOCNICZE
@@ -192,35 +195,35 @@ class AdminPanel:
     def _card(self, parent) -> tk.Frame:
         card = tk.Frame(parent, bg=self.config.COLOR_WHITE, relief=tk.RAISED,
                         borderwidth=2)
-        card.pack(padx=30, pady=(0, 10), fill=tk.X)
+        card.pack(padx=ui.px(30), pady=ui.px((0, 10)), fill=tk.X)
         inner = tk.Frame(card, bg=self.config.COLOR_WHITE)
-        inner.pack(padx=22, pady=16, fill=tk.X)
+        inner.pack(padx=ui.px(22), pady=ui.px(16), fill=tk.X)
         return inner
 
     def _field(self, parent, row: int, label: str, variable,
                values=None) -> None:
         width = 20
         tk.Label(parent, text=label, bg=self.config.COLOR_WHITE, fg="#444444",
-                 font=("Arial", 11), width=22, anchor="w").grid(
-                     row=row, column=0, sticky="w", padx=(0, 12), pady=6)
+                 font=ui.font(11), width=22, anchor="w").grid(
+                     row=row, column=0, sticky="w", padx=ui.px((0, 12)), pady=ui.px(6))
         if values:
             ttk.Combobox(parent, textvariable=variable, values=values,
-                         state="readonly", font=("Arial", 11),
+                         state="readonly", font=ui.font(11),
                          width=width - 2).grid(row=row, column=1, sticky="w",
-                                               pady=6)
+                                               pady=ui.px(6))
         else:
-            tk.Entry(parent, textvariable=variable, font=("Arial", 11),
+            tk.Entry(parent, textvariable=variable, font=ui.font(11),
                      width=width, relief=tk.SOLID, borderwidth=1).grid(
-                         row=row, column=1, sticky="w", pady=6)
+                         row=row, column=1, sticky="w", pady=ui.px(6))
 
     def _title(self, parent, text: str, subtitle: str = "") -> None:
         tk.Label(parent, text=text, bg=self.config.COLOR_WHITE,
                  fg=self.config.COLOR_PRIMARY,
-                 font=("Arial", 13, "bold")).pack(pady=(16, 4))
+                 font=ui.font(13, "bold")).pack(pady=ui.px((16, 4)))
         if subtitle:
             tk.Label(parent, text=subtitle, bg=self.config.COLOR_WHITE,
-                     fg="#666666", font=("Arial", 9, "italic"),
-                     justify="center").pack(pady=(0, 10))
+                     fg="#666666", font=ui.font(9, "italic"),
+                     justify="center").pack(pady=ui.px((0, 10)))
 
     # Widgety, ktore maja wlasne przewijanie - kolko myszy nad nimi nie
     # moze ruszac plotnem zakladki, bo przewijaloby sie dwa razy naraz.
@@ -354,29 +357,29 @@ class AdminPanel:
                       "(dwell 1 s) mogą nie zdążyć zebrać wymaganych próbek "
                       "obciążenia.\nSprzętowy RTS/CTS nie jest obsługiwany.",
                  bg=self.config.COLOR_WHITE, fg="#E65100",
-                 font=("Arial", 8, "italic"), justify="left").grid(
-                     row=6, column=0, columnspan=2, sticky="w", pady=(8, 0))
+                 font=ui.font(8, "italic"), justify="left").grid(
+                     row=6, column=0, columnspan=2, sticky="w", pady=ui.px((8, 0)))
 
         self.station_status = tk.Label(frame, text="",
                                        bg=self.config.COLOR_WHITE,
-                                       font=("Arial", 10))
-        self.station_status.pack(pady=(0, 4))
+                                       font=ui.font(10))
+        self.station_status.pack(pady=ui.px((0, 4)))
 
         buttons = tk.Frame(frame, bg=self.config.COLOR_WHITE)
-        buttons.pack(pady=6)
+        buttons.pack(pady=ui.px(6))
         tk.Button(buttons, text="Zapisz ustawienia", bg=self.config.COLOR_ACCENT,
-                  fg=self.config.COLOR_WHITE, font=("Arial", 11, "bold"),
+                  fg=self.config.COLOR_WHITE, font=ui.font(11, "bold"),
                   relief=tk.FLAT, cursor="hand2", width=20, height=2,
-                  command=self._save_station).pack(side=tk.LEFT, padx=(0, 10))
+                  command=self._save_station).pack(side=tk.LEFT, padx=ui.px((0, 10)))
         tk.Button(buttons, text="Test połączenia", bg="#607D8B",
-                  fg=self.config.COLOR_WHITE, font=("Arial", 11, "bold"),
+                  fg=self.config.COLOR_WHITE, font=ui.font(11, "bold"),
                   relief=tk.FLAT, cursor="hand2", width=20, height=2,
                   command=self._test_connection).pack(side=tk.LEFT)
 
         self.station_test_result = tk.Label(frame, text="",
                                            bg=self.config.COLOR_WHITE,
-                                           font=("Arial", 10))
-        self.station_test_result.pack(pady=4)
+                                           font=ui.font(10))
+        self.station_test_result.pack(pady=ui.px(4))
 
     def _save_station(self) -> None:
         previous = {
@@ -505,37 +508,37 @@ class AdminPanel:
                       "Zakres 0–5 s.\nPrzydatne, gdy krańcówka zwiera się, "
                       "zanim wyrób dosiądzie w gnieździe.",
                  bg=self.config.COLOR_WHITE, fg="#666666",
-                 font=("Arial", 8, "italic"), justify="left").grid(
-                     row=3, column=0, columnspan=3, sticky="w", pady=(0, 6))
+                 font=ui.font(8, "italic"), justify="left").grid(
+                     row=3, column=0, columnspan=3, sticky="w", pady=ui.px((0, 6)))
 
         tk.Label(inner, text="Interlock aktywny:", bg=self.config.COLOR_WHITE,
-                 fg="#444444", font=("Arial", 11), width=22, anchor="w").grid(
-                     row=4, column=0, sticky="w", padx=(0, 12), pady=6)
+                 fg="#444444", font=ui.font(11), width=22, anchor="w").grid(
+                     row=4, column=0, sticky="w", padx=ui.px((0, 12)), pady=ui.px(6))
         tk.Checkbutton(inner, variable=tk.BooleanVar(value=True),
                        bg=self.config.COLOR_WHITE,
                        activebackground=self.config.COLOR_WHITE,
-                       state="disabled").grid(row=4, column=1, sticky="w", pady=6)
+                       state="disabled").grid(row=4, column=1, sticky="w", pady=ui.px(6))
 
         self.interlock_status = tk.Label(frame, text="",
                                          bg=self.config.COLOR_WHITE,
-                                         font=("Arial", 10))
-        self.interlock_status.pack(pady=(0, 4))
+                                         font=ui.font(10))
+        self.interlock_status.pack(pady=ui.px((0, 4)))
 
         buttons = tk.Frame(frame, bg=self.config.COLOR_WHITE)
-        buttons.pack(pady=6)
+        buttons.pack(pady=ui.px(6))
         tk.Button(buttons, text="Zapisz ustawienia", bg=self.config.COLOR_ACCENT,
-                  fg=self.config.COLOR_WHITE, font=("Arial", 11, "bold"),
+                  fg=self.config.COLOR_WHITE, font=ui.font(11, "bold"),
                   relief=tk.FLAT, cursor="hand2", width=20, height=2,
-                  command=self._save_interlock).pack(side=tk.LEFT, padx=(0, 10))
+                  command=self._save_interlock).pack(side=tk.LEFT, padx=ui.px((0, 10)))
         tk.Button(buttons, text="Test Arduino", bg="#607D8B",
-                  fg=self.config.COLOR_WHITE, font=("Arial", 11, "bold"),
+                  fg=self.config.COLOR_WHITE, font=ui.font(11, "bold"),
                   relief=tk.FLAT, cursor="hand2", width=20, height=2,
                   command=self._test_interlock).pack(side=tk.LEFT)
 
         self.interlock_test_result = tk.Label(frame, text="",
                                               bg=self.config.COLOR_WHITE,
-                                              font=("Arial", 10))
-        self.interlock_test_result.pack(pady=4)
+                                              font=ui.font(10))
+        self.interlock_test_result.pack(pady=ui.px(4))
 
     def _save_interlock(self) -> None:
         previous = {"PORT": self.config.INTERLOCK_PORT,
@@ -658,13 +661,13 @@ class AdminPanel:
             background, foreground = "#FFF8E1", self.config.COLOR_WARNING
 
         box = tk.Frame(parent, bg=background, relief=tk.RIDGE, borderwidth=1)
-        box.pack(fill=tk.X, padx=30, pady=(0, 10))
+        box.pack(fill=tk.X, padx=ui.px(30), pady=ui.px((0, 10)))
         tk.Label(box, text="Kontrola sum kontrolnych profili", bg=background,
-                 fg=foreground, font=("Arial", 10, "bold")).pack(
-                     anchor="w", padx=12, pady=(8, 2))
+                 fg=foreground, font=ui.font(10, "bold")).pack(
+                     anchor="w", padx=ui.px(12), pady=ui.px((8, 2)))
         tk.Label(box, text=summary, bg=background, fg="#333333",
-                 font=("Arial", 9), justify="left", wraplength=880).pack(
-                     anchor="w", padx=12)
+                 font=ui.font(9), justify="left", wraplength=ui.px(880)).pack(
+                     anchor="w", padx=ui.px(12))
         if not external and not blocked:
             tk.Label(box,
                      text="Manifest lokalny wykrywa edycję pliku profilu obok "
@@ -672,10 +675,10 @@ class AdminPanel:
                           "Pełną kontrolę daje dopiero PROFILE_MANIFEST_PATH "
                           "wskazujący udział sieciowy tylko do odczytu.",
                      bg=background, fg="#6D4C41",
-                     font=("Arial", 8, "italic"), justify="left").pack(
-                         anchor="w", padx=12, pady=(2, 8))
+                     font=ui.font(8, "italic"), justify="left").pack(
+                         anchor="w", padx=ui.px(12), pady=ui.px((2, 8)))
         else:
-            tk.Frame(box, bg=background, height=6).pack()
+            tk.Frame(box, bg=background, height=ui.px(6)).pack()
 
     def _create_profile_tab(self) -> None:
         frame = self._tab("Profile")
@@ -689,10 +692,10 @@ class AdminPanel:
         self._create_enabled_products_box(frame)
 
         selector = tk.Frame(frame, bg=self.config.COLOR_WHITE)
-        selector.pack(fill=tk.X, padx=20, pady=(0, 6))
+        selector.pack(fill=tk.X, padx=ui.px(20), pady=ui.px((0, 6)))
         tk.Label(selector, text="Profil:", bg=self.config.COLOR_WHITE,
-                 fg="#444444", font=("Arial", 11, "bold")).pack(side=tk.LEFT,
-                                                                padx=(0, 8))
+                 fg="#444444", font=ui.font(11, "bold")).pack(side=tk.LEFT,
+                                                                padx=ui.px((0, 8)))
         # Domyslnie pierwszy profil WLACZONY na tym stanowisku, nie pierwszy
         # alfabetycznie: technolog na stanowisku SR203 dostawal wczesniej
         # sciane roznic wzgledem ER115.
@@ -702,19 +705,19 @@ class AdminPanel:
             value=(enabled or self.catalog.ids() or [""])[0])
         combo = ttk.Combobox(selector, textvariable=self._profile_var,
                              values=self.catalog.ids(), state="readonly",
-                             font=("Arial", 11), width=24)
+                             font=ui.font(11), width=24)
         combo.pack(side=tk.LEFT)
         combo.bind("<<ComboboxSelected>>", lambda event: self._load_profile())
 
         self.profile_meta = tk.Label(frame, text="", bg=self.config.COLOR_WHITE,
-                                     fg="#666666", font=("Arial", 9),
+                                     fg="#666666", font=ui.font(9),
                                      justify="left")
-        self.profile_meta.pack(anchor="w", padx=22, pady=(4, 4))
+        self.profile_meta.pack(anchor="w", padx=ui.px(22), pady=ui.px((4, 4)))
 
         self._create_serial_box(frame)
 
         table_frame = tk.Frame(frame, bg=self.config.COLOR_WHITE)
-        table_frame.pack(fill=tk.BOTH, expand=True, padx=20)
+        table_frame.pack(fill=tk.BOTH, expand=True, padx=ui.px(20))
         # Nazewnictwo kolumn jest 1:1 z oprogramowaniem Chromy (zakladka
         # Parameters), zeby technolog porownywal profil z ekranem testera
         # bez tlumaczenia nazw. "Obecność" to jedyne pole dodatkowe -
@@ -742,7 +745,7 @@ class AdminPanel:
         self.steps_tree.bind("<Double-1>", lambda event: self._edit_step())
 
         buttons = tk.Frame(frame, bg=self.config.COLOR_WHITE)
-        buttons.pack(pady=8)
+        buttons.pack(pady=ui.px(8))
         for text, color, command, width in (
             ("▲ W górę", "#455A64", lambda: self._move_step(-1), 12),
             ("▼ W dół", "#455A64", lambda: self._move_step(1), 12),
@@ -756,14 +759,14 @@ class AdminPanel:
             ("Zapisz profil", self.config.COLOR_ACCENT, self._save_profile, 16),
         ):
             tk.Button(buttons, text=text, bg=color, fg=self.config.COLOR_WHITE,
-                      font=("Arial", 11, "bold"), relief=tk.FLAT,
+                      font=ui.font(11, "bold"), relief=tk.FLAT,
                       cursor="hand2", width=width, height=2,
-                      command=command).pack(side=tk.LEFT, padx=6)
+                      command=command).pack(side=tk.LEFT, padx=ui.px(6))
 
         self.profile_status = tk.Label(frame, text="", bg=self.config.COLOR_WHITE,
-                                       font=("Arial", 10), wraplength=900,
+                                       font=ui.font(10), wraplength=ui.px(900),
                                        justify="left")
-        self.profile_status.pack(pady=(0, 4))
+        self.profile_status.pack(pady=ui.px((0, 4)))
 
         tk.Label(frame,
                  text="Arc Sense i Real Current są programowane i weryfikowane "
@@ -773,8 +776,8 @@ class AdminPanel:
                       "zmieniasz przyciskami ▲ / ▼ — zmiana wchodzi w życie "
                       "dopiero po „Zapisz profil”.",
                  bg=self.config.COLOR_WHITE, fg="#E65100",
-                 font=("Arial", 8, "italic"), justify="left").pack(
-                     anchor="w", padx=22, pady=(0, 8))
+                 font=ui.font(8, "italic"), justify="left").pack(
+                     anchor="w", padx=ui.px(22), pady=ui.px((0, 8)))
 
         if self.catalog.ids():
             self._load_profile()
@@ -793,18 +796,18 @@ class AdminPanel:
         """
         box = tk.Frame(parent, bg=self.config.COLOR_WHITE, relief=tk.RAISED,
                        borderwidth=2)
-        box.pack(fill=tk.X, padx=20, pady=(0, 8))
+        box.pack(fill=tk.X, padx=ui.px(20), pady=ui.px((0, 8)))
         inner = tk.Frame(box, bg=self.config.COLOR_WHITE)
-        inner.pack(padx=16, pady=8, fill=tk.X)
+        inner.pack(padx=ui.px(16), pady=ui.px(8), fill=tk.X)
 
         tk.Label(inner, text="Długość numeru seryjnego:",
                  bg=self.config.COLOR_WHITE, fg="#444444",
-                 font=("Arial", 11, "bold")).pack(side=tk.LEFT, padx=(0, 10))
+                 font=ui.font(11, "bold")).pack(side=tk.LEFT, padx=ui.px((0, 10)))
 
         self._serial_lengths_var = tk.StringVar()
         tk.Entry(inner, textvariable=self._serial_lengths_var,
-                 font=("Consolas", 12), width=16, justify="center",
-                 relief=tk.SOLID, borderwidth=2).pack(side=tk.LEFT, ipady=3)
+                 font=ui.font(12, "", "Consolas"), width=16, justify="center",
+                 relief=tk.SOLID, borderwidth=2).pack(side=tk.LEFT, ipady=ui.px(3))
 
         tk.Label(inner,
                  text=f"  znaków — kilka wartości oddziel przecinkiem "
@@ -812,7 +815,7 @@ class AdminPanel:
                       f"{SERIAL_LENGTH_MAX}, najwyżej "
                       f"{SERIAL_LENGTHS_MAX_COUNT} różne długości.",
                  bg=self.config.COLOR_WHITE, fg="#666666",
-                 font=("Arial", 9)).pack(side=tk.LEFT)
+                 font=ui.font(9)).pack(side=tk.LEFT)
 
         tk.Label(parent,
                  text="Długość numeru jest jedyną kontrolą tego, co operator "
@@ -820,8 +823,8 @@ class AdminPanel:
                       "długość to jeden wariant kodu, który stanowisko "
                       "przyjmie bez pytania.",
                  bg=self.config.COLOR_WHITE, fg="#E65100",
-                 font=("Arial", 8, "italic"), justify="left").pack(
-                     anchor="w", padx=22, pady=(0, 6))
+                 font=ui.font(8, "italic"), justify="left").pack(
+                     anchor="w", padx=ui.px(22), pady=ui.px((0, 6)))
 
     def _create_enabled_products_box(self, parent) -> None:
         """Wlaczanie/wylaczanie profili na TYM stanowisku.
@@ -832,14 +835,14 @@ class AdminPanel:
         """
         box = tk.Frame(parent, bg=self.config.COLOR_WHITE, relief=tk.RAISED,
                        borderwidth=2)
-        box.pack(fill=tk.X, padx=20, pady=(0, 8))
+        box.pack(fill=tk.X, padx=ui.px(20), pady=ui.px((0, 8)))
         inner = tk.Frame(box, bg=self.config.COLOR_WHITE)
-        inner.pack(padx=16, pady=10, fill=tk.X)
+        inner.pack(padx=ui.px(16), pady=ui.px(10), fill=tk.X)
 
         tk.Label(inner, text="Aktywne na tym stanowisku:",
                  bg=self.config.COLOR_WHITE, fg="#444444",
-                 font=("Arial", 11, "bold")).grid(
-                     row=0, column=0, sticky="w", padx=(0, 16), pady=(0, 6))
+                 font=ui.font(11, "bold")).grid(
+                     row=0, column=0, sticky="w", padx=ui.px((0, 16)), pady=ui.px((0, 6)))
 
         self._enabled_vars: dict[str, tk.BooleanVar] = {}
         for position, profile in enumerate(self.catalog.all()):
@@ -854,20 +857,20 @@ class AdminPanel:
                 bg=self.config.COLOR_WHITE,
                 activebackground=self.config.COLOR_WHITE,
                 fg=("#333333" if not suffix else "#999999"),
-                font=("Arial", 10)).grid(
-                    row=1 + position, column=0, columnspan=2, sticky="w", pady=1)
+                font=ui.font(10)).grid(
+                    row=1 + position, column=0, columnspan=2, sticky="w", pady=ui.px(1))
 
         self.enabled_status = tk.Label(inner, text="",
                                        bg=self.config.COLOR_WHITE,
-                                       font=("Arial", 9))
+                                       font=ui.font(9))
         self.enabled_status.grid(row=1 + len(self._enabled_vars), column=0,
-                                 columnspan=2, sticky="w", pady=(6, 0))
+                                 columnspan=2, sticky="w", pady=ui.px((6, 0)))
 
         tk.Button(inner, text="Zapisz zestaw profili",
                   bg=self.config.COLOR_ACCENT, fg=self.config.COLOR_WHITE,
-                  font=("Arial", 10, "bold"), relief=tk.FLAT, cursor="hand2",
+                  font=ui.font(10, "bold"), relief=tk.FLAT, cursor="hand2",
                   width=22, command=self._save_enabled_products).grid(
-                      row=0, column=1, sticky="e", pady=(0, 6))
+                      row=0, column=1, sticky="e", pady=ui.px((0, 6)))
 
     def _save_enabled_products(self) -> None:
         selected = sorted(
@@ -1025,24 +1028,24 @@ class AdminPanel:
              f"mA (min {ABSOLUTE_MIN_PRESENCE_MA:.3f}) — pole aplikacji"))
 
         grid = tk.Frame(dialog, bg=self.config.COLOR_WHITE)
-        grid.pack(padx=22, pady=16)
+        grid.pack(padx=ui.px(22), pady=ui.px(16))
         for row, (key, label, value, unit) in enumerate(fields):
             tk.Label(grid, text=label, bg=self.config.COLOR_WHITE, fg="#555555",
-                     font=("Arial", 10), width=17, anchor="e").grid(
-                         row=row, column=0, sticky="e", padx=(0, 8), pady=4)
+                     font=ui.font(10), width=17, anchor="e").grid(
+                         row=row, column=0, sticky="e", padx=ui.px((0, 8)), pady=ui.px(4))
             variable = tk.StringVar(value=value)
             variables[key] = variable
-            tk.Entry(grid, textvariable=variable, font=("Arial", 10, "bold"),
+            tk.Entry(grid, textvariable=variable, font=ui.font(10, "bold"),
                      width=18, justify="center", relief=tk.SOLID,
-                     borderwidth=1).grid(row=row, column=1, sticky="w", pady=4)
+                     borderwidth=1).grid(row=row, column=1, sticky="w", pady=ui.px(4))
             tk.Label(grid, text=unit, bg=self.config.COLOR_WHITE, fg="#888888",
-                     font=("Arial", 9)).grid(row=row, column=2, sticky="w",
-                                             padx=(6, 0), pady=4)
+                     font=ui.font(9)).grid(row=row, column=2, sticky="w",
+                                             padx=ui.px((6, 0)), pady=ui.px(4))
 
         error_label = tk.Label(dialog, text="", bg=self.config.COLOR_WHITE,
-                               fg=self.config.COLOR_ERROR, font=("Arial", 9),
-                               wraplength=380, justify="left")
-        error_label.pack(padx=20, pady=(0, 6))
+                               fg=self.config.COLOR_ERROR, font=ui.font(9),
+                               wraplength=ui.px(380), justify="left")
+        error_label.pack(padx=ui.px(20), pady=ui.px((0, 6)))
 
         def apply_changes() -> None:
             candidate = dict(step)
@@ -1076,15 +1079,15 @@ class AdminPanel:
                 fg=self.config.COLOR_WARNING)
 
         row = tk.Frame(dialog, bg=self.config.COLOR_WHITE)
-        row.pack(pady=(0, 16))
+        row.pack(pady=ui.px((0, 16)))
         tk.Button(row, text="Zastosuj", bg=self.config.COLOR_ACCENT,
-                  fg=self.config.COLOR_WHITE, font=("Arial", 10, "bold"),
+                  fg=self.config.COLOR_WHITE, font=ui.font(10, "bold"),
                   width=12, relief=tk.FLAT, cursor="hand2",
-                  command=apply_changes).pack(side=tk.LEFT, padx=5)
+                  command=apply_changes).pack(side=tk.LEFT, padx=ui.px(5))
         tk.Button(row, text="Anuluj", bg="#999999", fg=self.config.COLOR_WHITE,
-                  font=("Arial", 10, "bold"), width=12, relief=tk.FLAT,
+                  font=ui.font(10, "bold"), width=12, relief=tk.FLAT,
                   cursor="hand2", command=dialog.destroy).pack(side=tk.LEFT,
-                                                               padx=5)
+                                                               padx=ui.px(5))
 
     # Pola kroku pokazywane w podsumowaniu zmian: klucz -> (etykieta, format).
     _CHANGE_FIELDS = (
@@ -1262,35 +1265,35 @@ class AdminPanel:
         self._log_dir_var = tk.StringVar(value=self.config.LOG_DIR)
         tk.Label(inner, text="Ścieżka zapisu raportów:",
                  bg=self.config.COLOR_WHITE, fg="#444444",
-                 font=("Arial", 11, "bold")).pack(anchor="w", pady=(0, 6))
+                 font=ui.font(11, "bold")).pack(anchor="w", pady=ui.px((0, 6)))
         row = tk.Frame(inner, bg=self.config.COLOR_WHITE)
         row.pack(fill=tk.X)
-        tk.Entry(row, textvariable=self._log_dir_var, font=("Courier", 10),
+        tk.Entry(row, textvariable=self._log_dir_var, font=ui.font(10, "", "Courier"),
                  relief=tk.SOLID, borderwidth=1).pack(
-                     side=tk.LEFT, expand=True, fill=tk.X, ipady=5, padx=(0, 8))
+                     side=tk.LEFT, expand=True, fill=tk.X, ipady=ui.px(5), padx=ui.px((0, 8)))
         tk.Button(row, text="Przeglądaj...", bg=self.config.COLOR_PRIMARY,
-                  fg=self.config.COLOR_WHITE, font=("Arial", 9, "bold"),
-                  relief=tk.FLAT, cursor="hand2", padx=10, pady=4,
+                  fg=self.config.COLOR_WHITE, font=ui.font(9, "bold"),
+                  relief=tk.FLAT, cursor="hand2", padx=ui.px(10), pady=ui.px(4),
                   command=self._browse_log_dir).pack(side=tk.LEFT)
 
         self.log_active_label = tk.Label(
             inner, text=f"Aktualnie aktywna: {self.config.LOG_DIR}",
             bg=self.config.COLOR_WHITE, fg="#aaaaaa",
-            font=("Arial", 8, "italic"))
-        self.log_active_label.pack(anchor="w", pady=(6, 0))
+            font=ui.font(8, "italic"))
+        self.log_active_label.pack(anchor="w", pady=ui.px((6, 0)))
 
         self.log_status = tk.Label(frame, text="", bg=self.config.COLOR_WHITE,
-                                   font=("Arial", 10))
-        self.log_status.pack(pady=(0, 5))
+                                   font=ui.font(10))
+        self.log_status.pack(pady=ui.px((0, 5)))
 
         buttons = tk.Frame(frame, bg=self.config.COLOR_WHITE)
-        buttons.pack(pady=6)
+        buttons.pack(pady=ui.px(6))
         tk.Button(buttons, text="Sprawdź dostępność", bg=self.config.COLOR_WARNING,
-                  fg=self.config.COLOR_WHITE, font=("Arial", 11, "bold"),
+                  fg=self.config.COLOR_WHITE, font=ui.font(11, "bold"),
                   relief=tk.FLAT, cursor="hand2", width=20, height=2,
-                  command=self._check_log_dir).pack(side=tk.LEFT, padx=(0, 10))
+                  command=self._check_log_dir).pack(side=tk.LEFT, padx=ui.px((0, 10)))
         tk.Button(buttons, text="Zapisz ścieżkę", bg=self.config.COLOR_ACCENT,
-                  fg=self.config.COLOR_WHITE, font=("Arial", 11, "bold"),
+                  fg=self.config.COLOR_WHITE, font=ui.font(11, "bold"),
                   relief=tk.FLAT, cursor="hand2", width=20, height=2,
                   command=self._save_log_dir).pack(side=tk.LEFT)
 
@@ -1384,10 +1387,10 @@ class AdminPanel:
                       "odrzuci którąś komendę, popraw ją w SCPI_OVERRIDES "
                       "w station_config.json.",
                  bg=self.config.COLOR_WHITE, fg="#E65100",
-                 font=("Arial", 9, "italic"), justify="center").pack(pady=(0, 8))
+                 font=ui.font(9, "italic"), justify="center").pack(pady=ui.px((0, 8)))
 
         table_frame = tk.Frame(frame, bg=self.config.COLOR_WHITE)
-        table_frame.pack(fill=tk.BOTH, expand=True, padx=20)
+        table_frame.pack(fill=tk.BOTH, expand=True, padx=ui.px(20))
         columns = ("Komenda", "Nagłówek", "Status", "Odpowiedź", "SYST:ERR?")
         self.diag_tree = ttk.Treeview(table_frame, columns=columns,
                                       show="headings", height=14)
@@ -1401,22 +1404,22 @@ class AdminPanel:
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
         self.diag_status = tk.Label(frame, text="", bg=self.config.COLOR_WHITE,
-                                    font=("Arial", 10), wraplength=900,
+                                    font=ui.font(10), wraplength=ui.px(900),
                                     justify="left")
-        self.diag_status.pack(pady=(6, 4))
+        self.diag_status.pack(pady=ui.px((6, 4)))
 
         buttons = tk.Frame(frame, bg=self.config.COLOR_WHITE)
-        buttons.pack(pady=6)
+        buttons.pack(pady=ui.px(6))
         tk.Button(buttons, text="Pokaż dialekt", bg="#607D8B",
-                  fg=self.config.COLOR_WHITE, font=("Arial", 11, "bold"),
+                  fg=self.config.COLOR_WHITE, font=ui.font(11, "bold"),
                   relief=tk.FLAT, cursor="hand2", width=18, height=2,
-                  command=self._show_dialect).pack(side=tk.LEFT, padx=(0, 10))
+                  command=self._show_dialect).pack(side=tk.LEFT, padx=ui.px((0, 10)))
         tk.Button(buttons, text="Uruchom sondę", bg=self.config.COLOR_ACCENT,
-                  fg=self.config.COLOR_WHITE, font=("Arial", 11, "bold"),
+                  fg=self.config.COLOR_WHITE, font=ui.font(11, "bold"),
                   relief=tk.FLAT, cursor="hand2", width=18, height=2,
-                  command=self._run_probe).pack(side=tk.LEFT, padx=(0, 10))
+                  command=self._run_probe).pack(side=tk.LEFT, padx=ui.px((0, 10)))
         tk.Button(buttons, text="Porównaj z testerem", bg="#00695C",
-                  fg=self.config.COLOR_WHITE, font=("Arial", 11, "bold"),
+                  fg=self.config.COLOR_WHITE, font=ui.font(11, "bold"),
                   relief=tk.FLAT, cursor="hand2", width=20, height=2,
                   command=self._compare_with_instrument).pack(side=tk.LEFT)
 
@@ -1677,18 +1680,18 @@ class AdminPanel:
         obok sciezki raportow.
         """
         box = tk.Frame(parent, bg="#fff8e1", relief=tk.RIDGE, borderwidth=1)
-        box.pack(fill=tk.X, padx=30, pady=(12, 0))
+        box.pack(fill=tk.X, padx=ui.px(30), pady=ui.px((12, 0)))
         tk.Label(box, text="Dziennik audytowy zmian konfiguracji",
                  bg="#fff8e1", fg="#E65100",
-                 font=("Arial", 10, "bold")).pack(anchor="w", padx=12,
-                                                  pady=(8, 2))
+                 font=ui.font(10, "bold")).pack(anchor="w", padx=ui.px(12),
+                                                  pady=ui.px((8, 2)))
         tk.Label(box, text=audit_log_path(), bg="#fff8e1", fg="#5D4037",
-                 font=("Consolas", 9)).pack(anchor="w", padx=12)
+                 font=ui.font(9, "", "Consolas")).pack(anchor="w", padx=ui.px(12))
         tk.Label(box,
                  text="Każda zmiana parametru testowego zapisuje się tu razem "
                       "z wartością poprzednią.\nFolder aplikacji musi mieć "
                       "uprawnienia NTFS ograniczone do technologa — inaczej "
                       "dziennik\nmożna podmienić.",
-                 bg="#fff8e1", fg="#6D4C41", font=("Arial", 8, "italic"),
-                 justify="left").pack(anchor="w", padx=12, pady=(2, 8))
+                 bg="#fff8e1", fg="#6D4C41", font=ui.font(8, "italic"),
+                 justify="left").pack(anchor="w", padx=ui.px(12), pady=ui.px((2, 8)))
 

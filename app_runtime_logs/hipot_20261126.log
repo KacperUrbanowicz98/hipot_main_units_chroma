@@ -1,0 +1,13 @@
+
+[15:26:05.307388][OUT] ========================================================================
+[15:26:05.307714][OUT] [RUNTIME] Start sesji: 2026-11-26T15:26:05+01:00
+[15:26:05.307762][OUT] [RUNTIME] PID: 35480
+[15:26:05.307805][OUT] [RUNTIME] Python: 3.13.3 | frozen=False
+[15:26:05.307842][OUT] [RUNTIME] Log: C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\app_runtime_logs\hipot_20261126.log
+[15:26:05.307878][OUT] ========================================================================
+[15:26:05.547532][OUT] [RUNTIME] Reconext Hi-Pot Main Units 1.0.0
+[15:26:05.547681][OUT] [RUNTIME] Diagnostyka sesji: C:\Users\kacper.urbanowicz\PycharmProjects\hipot_main_units\app_runtime_logs\hipot_20261126.log
+[15:26:05.557083][OUT] [GUI] Ekran 1920x1080, skala interfejsu 1.00
+[15:26:05.703285][OUT] [RUNTIME] Stanowisko: Branch_1.2 | Chroma 19053 na COM6 @9600 | interlock COM3
+[15:26:05.703730][OUT] [RUNTIME] Profile: ER115, SE210, SR203_SR204, SR213, SR213_2
+[15:26:13.762270][OUT] [AUDIT] PANEL/WEJSCIE

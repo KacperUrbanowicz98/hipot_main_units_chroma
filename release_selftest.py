@@ -400,7 +400,8 @@ def test_profile_catalog() -> None:
     assert not catalog.errors, f"Profile odrzucone: {catalog.errors}"
     # Profile stanowisk Auto Branch 1. SR203_SR204 to JEDEN profil scalony
     # z czterech wariantow; ER115 / SE210 / SR213 to odrebne wyroby.
-    assert set(catalog.ids()) == {"SR203_SR204", "ER115", "SE210", "SR213"}
+    assert set(catalog.ids()) == {"SR203_SR204", "ER115", "SE210", "SR213",
+                                  "SR213_2"}
 
     # Kazdy profil: S/N dokladnie 14 znakow.
     for profile in catalog.all():
@@ -419,6 +420,40 @@ def test_profile_catalog() -> None:
     assert not sr213.channel_warnings, sr213.channel_warnings
     # Oba kroki ida po 1,5 kV - profil nie moze po cichu zgubic napiecia.
     assert all(step["voltage"] == 1500 for step in sr213.steps)
+    # SR213_2 (26.11.2026): wariant SR213 z czterema portami Ethernet.
+    # Przypisanie kanalow podal technolog i jest to JEDYNA rzecz, ktorej
+    # nie da sie wyprowadzic z zadnego dokumentu - dlatego stoi tu
+    # wypisana wprost. Pomylka w masce to test wykonany na niewlasciwej
+    # parze zacisków, czyli PASS, ktory niczego nie dowodzi.
+    sr213_2 = catalog.get("SR213_2")
+    assert [step["name"] for step in sr213_2.steps] == [
+        "ADSL", "DSL", "Ethernet 1", "Ethernet 2", "Ethernet 3", "Ethernet 4"]
+    assert [step["channels"] for step in sr213_2.steps] == [
+        "OHOOOOOO",   # ADSL       - kanal 2
+        "OOHOOOOO",   # DSL        - kanal 3
+        "OOOHOOOO",   # Ethernet 1 - kanal 4
+        "OOOOHOOO",   # Ethernet 2 - kanal 5
+        "OOOOOHOO",   # Ethernet 3 - kanal 6
+        "OOOOOOHO",   # Ethernet 4 - kanal 7
+    ], [step["channels"] for step in sr213_2.steps]
+    # Zaden kanal nie obsluguje dwoch krokow - inaczej niz w pierwotnym
+    # SR213, gdzie 'ADSL' i 'Ethernet 3' mialy wpisany ten sam kanal 6.
+    assert not sr213_2.channel_warnings, sr213_2.channel_warnings
+    assert len({step["channels"] for step in sr213_2.steps}) == 6
+    # ADSL i DSL maja nastawy SR213, Ethernety - nastawy SR203_SR204.
+    assert [step["voltage"] for step in sr213_2.steps] == [
+        1500, 1500, 1060, 1060, 1060, 1060]
+    assert [step["limit_low"] for step in sr213_2.steps] == [
+        0.02, 0.02, 0.035, 0.035, 0.035, 0.035]
+    assert [step["limit_high"] for step in sr213_2.steps] == [
+        1.5, 1.5, 1.0, 1.0, 1.0, 1.0]
+    # Prog obecnosci musi byc rowny dolnemu limitowi - pusty fixture
+    # zmierzylby zero i przeszedlby jako PASS.
+    assert all(step["presence_min_current"] == step["limit_low"]
+               for step in sr213_2.steps)
+    # SR213_2 jest WARIANTEM, nie zamiennikiem: oryginalny SR213 zostaje.
+    assert sr213_2.report_program == "SR213_2" != sr213.report_program
+
     # Identyfikatory profili sa WIELKIMI literami, jak nazwy wyrobow.
     assert all(pid == pid.upper() for pid in catalog.ids()), catalog.ids()
     # Dopasowanie pozostaje niewrazliwe na wielkosc liter.
@@ -1910,6 +1945,129 @@ def test_admin_panel_tabs_scroll_when_screen_is_short() -> None:
         root.destroy()
 
 
+def test_ui_scale_is_neutral_at_full_size() -> None:
+    """Przy skali 1.0 interfejs musi byc IDENTYCZNY jak przed zmiana.
+
+    Skalowanie zostalo dolozone dla malych monitorow. Stanowiska z duzym
+    monitorem dzialaja i nie wolno im nic zmienic - dlatego wspolczynnik
+    ma twardy sufit 1.0, a przy 1.0 obie funkcje przepuszczaja wartosci
+    bez zmian.
+    """
+    from station_config import UI_MIN_FACTOR, UiScale
+
+    scale = UiScale()
+    assert scale.factor == 1.0, "domyslna skala musi byc neutralna"
+    assert scale.font(21, "bold") == ("Arial", 21, "bold")
+    assert scale.font(12) == ("Arial", 12)
+    assert scale.font(22, "bold", "Consolas") == ("Consolas", 22, "bold")
+    assert scale.px(68) == 68 and scale.px((60, 10)) == (60, 10)
+    assert scale.px(0) == 0, "zero musi zostac zerem, nie zamienic sie w 1 px"
+
+    # Duzy monitor: bez zmian. Maly: zmniejszenie, ale nie w nieskonczonosc.
+    assert scale.configure(1920, 1080) == 1.0
+    assert scale.font(21, "bold") == ("Arial", 21, "bold")
+    assert scale.configure(2560, 1440) == 1.0, "skala nie moze przekroczyc 1.0"
+    assert scale.configure(1366, 768) < 1.0
+    assert scale.configure(640, 480) == UI_MIN_FACTOR, \
+        "ponizej dolnej granicy interfejs przestaje byc czytelny"
+    # Najmniejsza czcionka nie schodzi do zera nawet przy najmniejszej skali.
+    assert scale.font(8)[1] >= 7, scale.font(8)
+
+    # Zadnej sztywnej krotki czcionki nie moze zostac w ekranach operatora.
+    for name in ("gui.py", "test_screen.py", "admin_panel.py"):
+        source = (ROOT / name).read_text(encoding="utf-8")
+        for family in ('"Arial"', '"Consolas"', '"Courier"'):
+            assert f"({family}," not in source.replace(" ", "").replace(
+                f"({family[1:-1]},", f"({family},"), name
+            assert f"font=({family}" not in source, \
+                f"{name}: wrocila czcionka wpisana na sztywno {family}"
+
+
+def test_operator_screens_fit_small_station_monitors() -> None:
+    """Ekran operatora i ekran testu musza zmiescic sie w pionie.
+
+    Okno glowne jest maksymalizowane, wiec na kazdym monitorze dostaje
+    tyle miejsca, ile system ma do oddania. To nigdy nie bylo problemem
+    okna - problemem byla TRESC o rozmiarach policzonych dla duzego
+    monitora. Ekran testowy profilu SR213_2 (6 krokow) potrzebuje 900 px;
+    na monitorze 1366x768 po odjeciu paska zadan zostaje 678, wiec STOP
+    i stopka lezaly pod krawedzia ekranu.
+
+    Sprawdzamy to na gotowym, zbudowanym ekranie - nie na samym
+    wspolczynniku. Wspolczynnik liczony z rozdzielczosci jest wylacznie
+    oszacowaniem; czesc wysokosci (obramowania, wiersze tabeli) nie
+    zmienia sie razem z czcionka, dlatego aplikacja MIERZY zbudowany
+    ekran i poprawia skale. Tu mierzymy dokladnie to samo.
+    """
+    import tkinter as tk
+
+    import gui as gui_module
+    import test_screen as test_screen_module
+    from station_config import StationConfig, ui
+
+    source = (ROOT / "test_screen.py").read_text(encoding="utf-8")
+    # Dopasowanie MUSI konczyc sie przed otwarciem portow: przebudowa
+    # ekranu w trakcie polaczenia z testerem byla by zmiana stanu sprzetu.
+    body = source[source.index("def show(self)"):source.index("def _build_body")]
+    assert body.index("ui.autofit") < body.index("_connect_device"), \
+        "dopasowanie skali dzieje sie PO otwarciu portu testera"
+
+    catalog = ProductCatalog(ROOT / "products")
+    profile = catalog.get("SR213_2")          # najwyzsza tabela krokow
+    margin = 90                                # zapas na pasek zadan
+
+    for screen_w, screen_h in ((1920, 1080), (1600, 900), (1366, 768),
+                               (1280, 720), (1024, 768)):
+        available = screen_h - margin
+        root = tk.Tk()
+        try:
+            root.withdraw()
+            with patch.object(tk.Misc, "winfo_screenwidth",
+                              lambda self, w=screen_w: w), \
+                 patch.object(tk.Misc, "winfo_screenheight",
+                              lambda self, h=screen_h: h), \
+                 patch.object(StationConfig, "is_product_enabled",
+                              lambda self, product_id: True):
+                ui.configure(screen_w, screen_h)
+
+                app = gui_module.HiPotApp(root)
+                root.update_idletasks()
+                start_h = root.winfo_reqheight()
+                assert start_h <= available, (
+                    f"{screen_w}x{screen_h}: ekran startowy potrzebuje "
+                    f"{start_h} px, jest {available} px")
+
+                # Ekran testowy budujemy bez dotykania sprzetu - mierzymy
+                # uklad, nie polaczenie.
+                with patch.object(test_screen_module.TestScreen,
+                                  "_connect_device", lambda self: None), \
+                     patch.object(test_screen_module.TestScreen,
+                                  "_connect_interlock", lambda self: None):
+                    screen = test_screen_module.TestScreen(
+                        parent=root, config=app.config,
+                        scan=FakeScan(profile, serial="D210244C009471"))
+                    screen.show()
+                    root.update_idletasks()
+                    test_h = root.winfo_reqheight()
+                    assert test_h <= available, (
+                        f"{screen_w}x{screen_h}: ekran testowy potrzebuje "
+                        f"{test_h} px, jest {available} px "
+                        f"(skala {ui.factor:.2f})")
+                    # Przycisk STOP to jedyna droga przerwania cyklu -
+                    # musi istniec po kazdej przebudowie.
+                    assert screen.start_button is not None
+                    screen._closed = True
+        finally:
+            try:
+                root.destroy()
+            except tk.TclError:
+                pass
+
+    # Duzy monitor zostaje nietkniety.
+    ui.configure(1920, 1080)
+    assert ui.factor == 1.0
+
+
 def test_read_program_matches_station_readout() -> None:
     """Odczyt programu z testera + porownanie z profilem.
 
@@ -2352,10 +2510,16 @@ def test_start_screen_profile_list() -> None:
         ]
 
     # Brak ograniczenia = wszystkie profile na liscie.
-    assert visible_labels(None) == ["ER115", "SE210", "SR203 / SR204", "SR213"]
+    assert visible_labels(None) == ["ER115", "SE210", "SR203 / SR204",
+                                    "SR213", "SR213_2"]
     # Wylaczony profil NIE moze pojawic sie na liscie.
     assert visible_labels(["SR203_SR204"]) == ["SR203 / SR204"]
     assert visible_labels(["ER115", "SR213"]) == ["ER115", "SR213"]
+    # SR213 i SR213_2 to DWA osobne wpisy. Nazwy roznia sie jednym
+    # znakiem, wiec stanowisko, ktore ma testowac tylko jeden z nich,
+    # musi dostac na liscie wylacznie ten jeden.
+    assert visible_labels(["SR213"]) == ["SR213"]
+    assert visible_labels(["SR213_2"]) == ["SR213_2"]
     assert visible_labels(["TEST_1STEP"]) == []
 
     # Wybor profilu i jego widocznosc sa sprawdzane funkcjonalnie
@@ -2773,11 +2937,31 @@ def test_builder_guards_catch_real_damage() -> None:
     z przylegajacych literalow nie bylo wykrywane, bo szukalo go tylko
     jako podciagu tekstu zrodlowego. Test pilnuje obu poprawek.
     """
+    import ast
+    import collections
+
     import create_exe as builder
 
     # Pliki muszą przechodzić w stanie niezmienionym.
     for name in builder.PROJECT_FILES:
         builder.validate_source_file(name, ROOT / name)
+
+    # Powtorzony klucz w slowniku markerow to CICHA utrata kontroli:
+    # Python zostawia ostatni wpis, wiec dopisanie drugiego
+    # "test_screen.py" skasowaloby wszystkie markery bezpieczenstwa tego
+    # pliku i nikt by sie nie dowiedzial. Zdarzylo sie 26.11.2026.
+    tree = ast.parse((ROOT / "create_exe.py").read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Assign)
+                and isinstance(node.value, ast.Dict)
+                and getattr(node.targets[0], "id", "").endswith("MARKERS")):
+            continue
+        keys = [key.value for key in node.value.keys]
+        duplicated = [key for key, count in collections.Counter(keys).items()
+                      if count > 1]
+        assert not duplicated, (
+            f"create_exe.py: {node.targets[0].id} ma powtorzony klucz "
+            f"{duplicated} - markery wczesniejszego wpisu przepadaja")
 
     previous_cwd = os.getcwd()
     with tempfile.TemporaryDirectory() as folder:
@@ -2855,9 +3039,11 @@ def test_builder_guards_catch_real_damage() -> None:
     # Kazdy plik produkcyjny ma byc czyms pilnowany.
     unguarded = [name for name in builder.PROJECT_FILES
                  if name not in builder.REQUIRED_SAFETY_MARKERS]
-    # main.py to bootstrap, station_config.py to same wartosci domyslne -
-    # nadpisywane przez station_config.json i pilnowane w settings_manager.
-    assert unguarded == ["main.py", "station_config.py"], unguarded
+    # Zostaje wylacznie main.py - bootstrap bez logiki testu.
+    # station_config.py to byly same wartosci domyslne (nadpisywane przez
+    # station_config.json i pilnowane w settings_manager), ale od
+    # 26.11.2026 mieszka tam skala interfejsu, wiec ma juz swoje markery.
+    assert unguarded == ["main.py"], unguarded
 
 
 def test_transport_limits() -> None:
@@ -3026,6 +3212,8 @@ def main() -> None:
         test_verdict_never_shows_previous_unit,
         test_admin_panel_fits_on_station_screens,
         test_admin_panel_tabs_scroll_when_screen_is_short,
+        test_ui_scale_is_neutral_at_full_size,
+        test_operator_screens_fit_small_station_monitors,
         test_read_program_matches_station_readout,
         test_admin_panel_tabs,
         test_recovery_after_abort,

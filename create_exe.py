@@ -184,6 +184,11 @@ REQUIRED_SAFETY_MARKERS = {
         "terminal_streak",
         # Probki z petli potwierdzania startu naleza do kroku 1.
         "on_measurement",
+        # 26.11.2026: dopasowanie skali interfejsu konczy sie PRZED
+        # otwarciem portow - przebudowa ekranu przy polaczonym testerze
+        # byla by zmiana stanu sprzetu.
+        "ui.autofit",
+        "_build_body",
     ),
     "profile_integrity.py": (
         # K5: profil zmieniony poza panelem blokuje testowanie.
@@ -207,6 +212,18 @@ REQUIRED_SAFETY_MARKERS = {
         "_widget_alive",
         # Jedna droga sprawdzania numeru seryjnego dla wszystkich ekranow.
         "resolve_serial",
+        # Interfejs dopasowuje sie do rozdzielczosci. Bez tego na monitorze
+        # 1366x768 przycisk "URUCHOM TEST" i stopka leza pod krawedzia
+        # ekranu - okno jest zmaksymalizowane, ale tresc jest od niego wyzsza.
+        "ui.configure_from",
+        "ui.autofit",
+    ),
+    "station_config.py": (
+        # Skala interfejsu ma twardy sufit 1.0: stanowisko z duzym
+        # monitorem musi dostac dokladnie to, co dotad.
+        "min(1.0, factor)",
+        "def autofit",
+        "UI_MIN_FACTOR",
     ),
     "admin_panel.py": (
         # Kazda zmiana parametru testowego trafia do dziennika audytowego -

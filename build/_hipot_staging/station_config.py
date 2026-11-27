@@ -24,6 +24,147 @@ def steps_word(count: int) -> str:
     return "kroki" if 2 <= count % 10 <= 4 else "kroków"
 
 
+# ---------------------------------------------------------------------- #
+# SKALOWANIE INTERFEJSU DO ROZDZIELCZOSCI EKRANU
+# ---------------------------------------------------------------------- #
+# Uklad ekranow byl rysowany na monitorze, ktory ma co najmniej tyle
+# miejsca. Przy takim ekranie wspolczynnik wynosi 1.0 i aplikacja wyglada
+# dokladnie tak, jak dotad - zero zmian dla stanowisk z duzym monitorem.
+UI_DESIGN_SIZE = (1500, 900)
+# Zapas na belke tytulu okna i pasek zadan - ten sam, co w panelu
+# inzynieryjnym. Okno glowne jest maksymalizowane, wiec dostaje obszar
+# roboczy, a nie caly ekran.
+UI_SCREEN_MARGIN = (60, 90)
+# Dolna granica. Ponizej tego napisy przestaja byc czytelne z odleglosci,
+# z jakiej operator patrzy na stanowisko - lepiej zostawic pasek
+# przewijania niz zrobic interfejs, ktorego nie da sie odczytac.
+UI_MIN_FACTOR = 0.62
+UI_MIN_FONT_PT = 7
+# Ile razy wolno przebudowac ekran, dopasowujac skale do zmierzonej
+# wysokosci. Trzy przebiegi wystarczaja na kazdej rozdzielczosci, ktora
+# wystepuje na stanowiskach; czwarty jest zapasem.
+UI_AUTOFIT_PASSES = 4
+# Zapas przy korekcie. Bez niego ekran trafia dokladnie w krawedz i
+# wystarczy jeden piksel obramowania wiecej, zeby znowu nie zmiescil sie.
+UI_AUTOFIT_TRIM = 0.98
+
+
+class UiScale:
+    """Jeden wspolczynnik, przez ktory przechodza rozmiary interfejsu.
+
+    Okno glowne jest maksymalizowane (``state("zoomed")``), wiec na kazdym
+    monitorze dostaje tyle miejsca, ile system ma do oddania - ale TRESC
+    miala rozmiary wpisane na sztywno, policzone dla duzego monitora.
+    Ekran startowy potrzebuje 848 px wysokosci; na monitorze 1366x768 po
+    odjeciu paska zadan zostaje ~678 px, wiec stopka i przycisk
+    "URUCHOM TEST" lezaly POD krawedzia ekranu. Maksymalizacja tego nie
+    naprawia - okno bylo duze, tylko tresc byla wieksza od okna.
+
+    Wspolczynnik nigdy nie przekracza 1.0: na duzych monitorach interfejs
+    ma zostac dokladnie taki, jaki jest dzis. Skalowanie dziala wylacznie
+    w dol i wylacznie wtedy, gdy ekran jest mniejszy od projektowego.
+    """
+
+    def __init__(self) -> None:
+        self._factor = 1.0
+
+    # ------------------------------------------------------------------ #
+    @property
+    def factor(self) -> float:
+        return self._factor
+
+    def configure(self, screen_w: int, screen_h: int) -> float:
+        """Ustawia wspolczynnik na podstawie rozmiaru ekranu."""
+        usable_w = max(320, int(screen_w) - UI_SCREEN_MARGIN[0])
+        usable_h = max(240, int(screen_h) - UI_SCREEN_MARGIN[1])
+        factor = min(usable_w / UI_DESIGN_SIZE[0], usable_h / UI_DESIGN_SIZE[1])
+        self._factor = max(UI_MIN_FACTOR, min(1.0, factor))
+        return self._factor
+
+    def configure_from(self, widget) -> float:
+        """Jak ``configure``, ale rozmiar ekranu bierze z widgetu Tk."""
+        return self.configure(widget.winfo_screenwidth(),
+                              widget.winfo_screenheight())
+
+    # ------------------------------------------------------------------ #
+    def font(self, size: int, weight: str = "", family: str = "Arial"):
+        """Krotka czcionki Tk po przeskalowaniu rozmiaru."""
+        scaled = max(UI_MIN_FONT_PT, int(round(size * self._factor)))
+        return (family, scaled, weight) if weight else (family, scaled)
+
+    def px(self, value):
+        """Przelicza wymiar w pikselach - liczbe albo krotke ``(a, b)``."""
+        if isinstance(value, (tuple, list)):
+            return tuple(self.px(item) for item in value)
+        scaled = int(round(value * self._factor))
+        # Zero zostaje zerem; wszystko inne ma zostac widoczne.
+        return scaled if value <= 0 else max(1, scaled)
+
+    # ------------------------------------------------------------------ #
+    def available_height(self, widget) -> int:
+        """Wysokosc, na ktora realnie mozna liczyc na tym ekranie."""
+        try:
+            screen_h = int(widget.winfo_screenheight())
+        except Exception:
+            return 0
+        return max(240, screen_h - UI_SCREEN_MARGIN[1])
+
+    def fits(self, widget) -> bool:
+        """Czy zbudowany ekran miesci sie w pionie."""
+        try:
+            widget.update_idletasks()
+            required = int(widget.winfo_reqheight())
+        except Exception:
+            return True
+        available = self.available_height(widget)
+        return required <= 0 or not available or required <= available
+
+    def autofit(self, widget) -> bool:
+        """Poprawia skale po zmierzeniu zbudowanego ekranu.
+
+        Wspolczynnik policzony z samej rozdzielczosci to OSZACOWANIE.
+        Czesc wysokosci nie zmienia sie razem z czcionka - obramowania,
+        grubosci ramek, zaokraglenia wierszy tabeli - wiec ekran, ktory
+        "powinien" zajac 678 px, zajmuje 752. Dlatego po zbudowaniu
+        mierzymy, ile naprawde zajal, i poprawiamy. Zwraca ``True``,
+        jesli ekran trzeba zbudowac jeszcze raz.
+
+        Nie podnosi skali. Jesli ekran sie miesci, nie dzieje sie nic -
+        stanowisko z duzym monitorem dostaje dokladnie to, co dotad.
+        """
+        try:
+            widget.update_idletasks()
+            required = int(widget.winfo_reqheight())
+            screen_h = int(widget.winfo_screenheight())
+        except Exception:
+            # Pomiar nie moze przewrocic budowy ekranu operatora.
+            return False
+        available = max(240, screen_h - UI_SCREEN_MARGIN[1])
+        if required <= 0 or required <= available:
+            return False
+        proposed = self._factor * (available / required) * UI_AUTOFIT_TRIM
+        proposed = max(UI_MIN_FACTOR, min(1.0, proposed))
+        # Ponizej dolnej granicy nie schodzimy nawet wtedy, gdy ekran
+        # dalej nie wchodzi: nieczytelny interfejs jest gorszy niz
+        # przyciety. Tak czy tak zglaszamy to do logu.
+        if proposed >= self._factor - 0.005:
+            if required > available:
+                print(f"[UI] Ekran potrzebuje {required} px, jest "
+                      f"{available} px, a skala jest juz na dolnej granicy "
+                      f"({self._factor:.2f}).")
+            return False
+        self._factor = proposed
+        return True
+
+    def describe(self) -> str:
+        return f"skala interfejsu {self._factor:.2f}"
+
+
+# Jedna instancja na aplikacje. Dopoki nikt nie wywola configure(),
+# wspolczynnik wynosi 1.0 - czyli zachowanie sprzed tej zmiany.
+ui = UiScale()
+
+
 class StationConfig:
     """Konfiguracja JEDNEGO stanowiska. Profil produktu jest osobno."""
 

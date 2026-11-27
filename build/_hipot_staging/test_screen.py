@@ -30,6 +30,7 @@ from report_writer import (
     save_report,
 )
 from security import audit
+from station_config import UI_AUTOFIT_PASSES, ui
 from safety_rules import (
     MIN_IN_RANGE_SAMPLES,
     PASS_MIN_RUNTIME_FRACTION,
@@ -161,12 +162,39 @@ class TestScreen:
         if self.app_ref is not None:
             self.app_ref.current_test_screen = self
         self._start_ui_poll()
+
+        # Budowa az do skutku - dokladnie jak na ekranie startowym. Ekran
+        # testowy jest wyzszy (tabela krokow rosnie z liczba krokow
+        # profilu), wiec to on decyduje o skali calej aplikacji. Caly ten
+        # blok dziala PRZED otwarciem portow: przebudowa to wylacznie
+        # widgety, zaden sprzet nie jest jeszcze dotkniety.
+        for _ in range(UI_AUTOFIT_PASSES):
+            self._build_body()
+            if not ui.autofit(self.parent):
+                break
+
+        # Ostatnia deska ratunku dla naprawde niskich ekranow (1280x720).
+        # Skala jest juz na dolnej granicy czytelnosci, a ekran dalej nie
+        # wchodzi - wiec zabieramy to, co ma najmniejsza wartosc operacyjna.
+        # "Ostatnie wyniki" to podglad historii sesji; tabela krokow,
+        # pomiary na zywo, werdykt, stan klapy i STOP zostaja.
+        if not ui.fits(self.parent):
+            self._build_body(with_history=False)
+            print("[UI] Ekran za niski na pelny uklad - panel "
+                  "'Ostatnie wyniki' ukryty. Wyniki ida normalnie do "
+                  "raportu, to tylko podglad na ekranie.")
+
+        self._connect_device()
+        self._connect_interlock()
+
+    def _build_body(self, with_history: bool = True) -> None:
         for widget in self.parent.winfo_children():
             widget.destroy()
+        self._history_frame = None
 
         self._create_header()
         self.main_frame = tk.Frame(self.parent, bg=self.config.COLOR_BG)
-        self.main_frame.pack(expand=True, fill=tk.BOTH, padx=16, pady=(12, 50))
+        self.main_frame.pack(expand=True, fill=tk.BOTH, padx=ui.px(16), pady=ui.px((12, 50)))
 
         self._create_device_info()
         self._create_step_table()
@@ -175,10 +203,8 @@ class TestScreen:
         self._create_progress_bar()
         self._create_interlock_status()
         self._create_control_buttons()
-        self._create_history_panel()
-
-        self._connect_device()
-        self._connect_interlock()
+        if with_history:
+            self._create_history_panel()
 
     def _start_ui_poll(self) -> None:
         if self._closed:
@@ -265,31 +291,32 @@ class TestScreen:
     # WIDOK
     # ------------------------------------------------------------------ #
     def _create_header(self) -> None:
-        header = tk.Frame(self.parent, bg=self.config.COLOR_PRIMARY, height=64)
+        header = tk.Frame(self.parent, bg=self.config.COLOR_PRIMARY,
+                          height=ui.px(64))
         header.pack(fill=tk.X)
         header.pack_propagate(False)
         tk.Label(header, text=self.config.WINDOW_TITLE,
                  bg=self.config.COLOR_PRIMARY, fg=self.config.COLOR_WHITE,
-                 font=("Arial", 20, "bold")).pack(side=tk.LEFT, padx=20, pady=14)
+                 font=ui.font(20, "bold")).pack(side=tk.LEFT, padx=ui.px(20), pady=ui.px(14))
         tk.Label(header, text=f"Stanowisko: {self.config.STATION_ID}",
                  bg=self.config.COLOR_PRIMARY, fg="#C5CAE9",
-                 font=("Arial", 12, "bold")).pack(side=tk.LEFT, padx=6, pady=14)
+                 font=ui.font(12, "bold")).pack(side=tk.LEFT, padx=ui.px(6), pady=ui.px(14))
 
-        border = tk.Frame(header, bg=self.config.COLOR_WHITE, padx=1, pady=1)
-        border.pack(side=tk.RIGHT, padx=10, pady=14)
+        border = tk.Frame(header, bg=self.config.COLOR_WHITE, padx=ui.px(1), pady=ui.px(1))
+        border.pack(side=tk.RIGHT, padx=ui.px(10), pady=ui.px(14))
         self.back_button = tk.Button(
             border, text="← Powrót do menu",
             bg=self.config.COLOR_PRIMARY, fg=self.config.COLOR_WHITE,
-            font=("Arial", 10, "bold"), relief=tk.FLAT, cursor="hand2",
-            padx=10, pady=4, command=self._go_back)
+            font=ui.font(10, "bold"), relief=tk.FLAT, cursor="hand2",
+            padx=ui.px(10), pady=ui.px(4), command=self._go_back)
         self.back_button.pack()
 
     def _create_device_info(self) -> None:
         frame = tk.Frame(self.main_frame, bg=self.config.COLOR_WHITE,
                          relief=tk.RAISED, borderwidth=2)
-        frame.pack(fill=tk.X, pady=(0, 8))
+        frame.pack(fill=tk.X, pady=ui.px((0, 8)))
         row = tk.Frame(frame, bg=self.config.COLOR_WHITE)
-        row.pack(padx=20, pady=10)
+        row.pack(padx=ui.px(20), pady=ui.px(10))
 
         for column, (label, value) in enumerate((
             ("Produkt:", self.profile.display_name),
@@ -297,26 +324,26 @@ class TestScreen:
         )):
             tk.Label(row, text=label, bg=self.config.COLOR_WHITE,
                      fg=self.config.COLOR_PRIMARY,
-                     font=("Arial", 11, "bold")).grid(
-                         row=0, column=column * 2, sticky="w", padx=(0, 8))
+                     font=ui.font(11, "bold")).grid(
+                         row=0, column=column * 2, sticky="w", padx=ui.px((0, 8)))
             tk.Label(row, text=value, bg=self.config.COLOR_WHITE, fg="#333333",
-                     font=("Arial", 11)).grid(
-                         row=0, column=column * 2 + 1, sticky="w", padx=(0, 28))
+                     font=ui.font(11)).grid(
+                         row=0, column=column * 2 + 1, sticky="w", padx=ui.px((0, 28)))
 
         tk.Label(row, text="S/N:", bg=self.config.COLOR_WHITE,
                  fg=self.config.COLOR_PRIMARY,
-                 font=("Arial", 11, "bold")).grid(row=0, column=4,
-                                                  sticky="w", padx=(0, 8))
+                 font=ui.font(11, "bold")).grid(row=0, column=4,
+                                                  sticky="w", padx=ui.px((0, 8)))
         self.sn_display_label = tk.Label(
             row, text=self.serial, bg=self.config.COLOR_WHITE, fg="#333333",
-            font=("Arial", 11, "bold"))
+            font=ui.font(11, "bold"))
         self.sn_display_label.grid(row=0, column=5, sticky="w")
 
     def _create_step_table(self) -> None:
         """Tabela krokow - operator widzi, ktory port jest testowany i jak wypadl."""
         frame = tk.Frame(self.main_frame, bg=self.config.COLOR_WHITE,
                          relief=tk.RAISED, borderwidth=2)
-        frame.pack(fill=tk.X, pady=(0, 8))
+        frame.pack(fill=tk.X, pady=ui.px((0, 8)))
 
         from station_config import steps_word
 
@@ -325,10 +352,10 @@ class TestScreen:
                       f"{steps_word(self.profile.step_count)} "
                       f"({self.profile.total_duration:.1f} s)",
                  bg=self.config.COLOR_WHITE, fg=self.config.COLOR_PRIMARY,
-                 font=("Arial", 11, "bold")).pack(pady=(10, 6))
+                 font=ui.font(11, "bold")).pack(pady=ui.px((10, 6)))
 
         table = tk.Frame(frame, bg=self.config.COLOR_WHITE)
-        table.pack(padx=16, pady=(0, 10), fill=tk.X)
+        table.pack(padx=ui.px(16), pady=ui.px((0, 10)), fill=tk.X)
 
         headers = ["#", "Nazwa", "Napięcie", "Limit [mA]", "Czas",
                    "Kanały", "Wynik"]
@@ -338,12 +365,12 @@ class TestScreen:
         # minimum - dopiero waga kolumny rozciaga ja na dostepne miejsce,
         # zachowujac proporcje miedzy kolumnami.
         for column, width in enumerate(widths):
-            table.grid_columnconfigure(column, weight=width, minsize=width * 7,
+            table.grid_columnconfigure(column, weight=width, minsize=ui.px(width * 7),
                                        uniform="kroki")
         for column, (text, width) in enumerate(zip(headers, widths)):
             tk.Label(table, text=text, bg=self.config.COLOR_PRIMARY,
-                     fg=self.config.COLOR_WHITE, font=("Arial", 9, "bold"),
-                     width=width, pady=3).grid(row=0, column=column, sticky="we")
+                     fg=self.config.COLOR_WHITE, font=ui.font(9, "bold"),
+                     width=width, pady=ui.px(3)).grid(row=0, column=column, sticky="we")
 
         for index, step in enumerate(self.profile.steps, start=1):
             background = "#f7f7f7" if index % 2 else self.config.COLOR_WHITE
@@ -360,12 +387,12 @@ class TestScreen:
             row_labels: dict[str, tk.Label] = {}
             for column, (value, width) in enumerate(zip(values, widths)):
                 label = tk.Label(table, text=value, bg=background, fg="#333333",
-                                 font=("Arial", 9), width=width, pady=2)
+                                 font=ui.font(9), width=width, pady=ui.px(2))
                 label.grid(row=index, column=column, sticky="we")
                 row_labels[headers[column]] = label
             result_label = tk.Label(table, text="—", bg=background, fg="#999999",
-                                    font=("Arial", 9, "bold"), width=widths[-1],
-                                    pady=2)
+                                    font=ui.font(9, "bold"), width=widths[-1],
+                                    pady=ui.px(2))
             result_label.grid(row=index, column=len(headers) - 1, sticky="we")
             row_labels["Wynik"] = result_label
             row_labels["_bg"] = background
@@ -374,27 +401,27 @@ class TestScreen:
     def _create_live_display(self) -> None:
         frame = tk.Frame(self.main_frame, bg=self.config.COLOR_WHITE,
                          relief=tk.RAISED, borderwidth=2)
-        frame.pack(fill=tk.BOTH, expand=True, pady=(0, 8))
+        frame.pack(fill=tk.BOTH, expand=True, pady=ui.px((0, 8)))
 
         self.live_title = tk.Label(
             frame, text="Pomiary na żywo", bg=self.config.COLOR_WHITE,
-            fg=self.config.COLOR_PRIMARY, font=("Arial", 11, "bold"))
-        self.live_title.pack(pady=(10, 4))
+            fg=self.config.COLOR_PRIMARY, font=ui.font(11, "bold"))
+        self.live_title.pack(pady=ui.px((10, 4)))
 
         grid = tk.Frame(frame, bg=self.config.COLOR_WHITE)
-        grid.pack(expand=True, pady=10)
+        grid.pack(expand=True, pady=ui.px(10))
         for column, (title, attribute, color) in enumerate((
             ("NAPIĘCIE", "voltage_label", self.config.COLOR_PRIMARY),
             ("PRĄD", "current_label", self.config.COLOR_ACCENT),
             ("CZAS", "time_label", "#333333"),
         )):
             cell = tk.Frame(grid, bg=self.config.COLOR_WHITE)
-            cell.grid(row=0, column=column, padx=36)
+            cell.grid(row=0, column=column, padx=ui.px(36))
             tk.Label(cell, text=title, bg=self.config.COLOR_WHITE, fg="#666666",
-                     font=("Arial", 9)).pack()
+                     font=ui.font(9)).pack()
             label = tk.Label(cell, text="0", bg=self.config.COLOR_WHITE,
-                             fg=color, font=("Arial", 30, "bold"))
-            label.pack(pady=4)
+                             fg=color, font=ui.font(30, "bold"))
+            label.pack(pady=ui.px(4))
             setattr(self, attribute, label)
 
         self.voltage_label.config(text="0 V")
@@ -422,11 +449,11 @@ class TestScreen:
         """
         self.verdict_frame = tk.Frame(self.main_frame, bg=self.config.COLOR_BG,
                                       height=96)
-        self.verdict_frame.pack(fill=tk.X, pady=(0, 6))
+        self.verdict_frame.pack(fill=tk.X, pady=ui.px((0, 6)))
         self.verdict_frame.pack_propagate(False)
         self.verdict_label = tk.Label(
             self.verdict_frame, text="GOTOWY", bg=self.config.COLOR_BG,
-            fg="#9E9E9E", font=("Arial", 64, "bold"))
+            fg="#9E9E9E", font=ui.font(64, "bold"))
         self.verdict_label.pack(expand=True, fill=tk.BOTH)
 
     def _set_verdict(self, text: str, color: str) -> None:
@@ -444,22 +471,22 @@ class TestScreen:
 
     def _create_progress_bar(self) -> None:
         frame = tk.Frame(self.main_frame, bg=self.config.COLOR_BG)
-        frame.pack(fill=tk.X, pady=(0, 8))
+        frame.pack(fill=tk.X, pady=ui.px((0, 8)))
         self.status_label = tk.Label(frame, text="Gotowy do rozpoczęcia testu",
                                      bg=self.config.COLOR_BG, fg="#424242",
-                                     font=("Arial", 13, "bold"),
-                                     wraplength=1200, justify="center")
-        self.status_label.pack(pady=(0, 5))
+                                     font=ui.font(13, "bold"),
+                                     wraplength=ui.px(1200), justify="center")
+        self.status_label.pack(pady=ui.px((0, 5)))
         # W6: ostrzezenie o zbyt wolnym probkowaniu bylo pisane do
         # status_label i kasowane w NASTEPNEJ linii - nigdy nie bylo widoczne.
         self.sampling_warning_label = tk.Label(
             frame, text="", bg=self.config.COLOR_BG,
-            fg=self.config.COLOR_WARNING, font=("Arial", 11, "bold"),
-            wraplength=1200, justify="center")
+            fg=self.config.COLOR_WARNING, font=ui.font(11, "bold"),
+            wraplength=ui.px(1200), justify="center")
         # W5: stan zapisu raportow. Pakowany dopiero, gdy jest co pokazac.
         self.storage_warning_label = tk.Label(
             frame, text="", bg="#FFF3E0", fg=self.config.COLOR_WARNING,
-            font=("Arial", 12, "bold"), wraplength=1200, justify="center")
+            font=ui.font(12, "bold"), wraplength=ui.px(1200), justify="center")
         self.progress_canvas = tk.Canvas(
             frame, height=26, bg=self.config.COLOR_WHITE,
             highlightthickness=1, highlightbackground="#cccccc")
@@ -470,11 +497,11 @@ class TestScreen:
     def _create_interlock_status(self) -> None:
         self.interlock_frame = tk.Frame(self.main_frame, bg="#fff8e1",
                                         relief=tk.RAISED, borderwidth=2)
-        self.interlock_frame.pack(fill=tk.X, pady=(0, 8))
+        self.interlock_frame.pack(fill=tk.X, pady=ui.px((0, 8)))
         self.interlock_label = tk.Label(
             self.interlock_frame, text="⏳ Łączenie z interlockiem (Arduino)...",
-            bg="#fff8e1", fg=self.config.COLOR_WARNING, font=("Arial", 11, "bold"))
-        self.interlock_label.pack(pady=7)
+            bg="#fff8e1", fg=self.config.COLOR_WARNING, font=ui.font(11, "bold"))
+        self.interlock_label.pack(pady=ui.px(7))
 
         # Przycisk pojawia sie TYLKO po utracie sygnalu. Utrata konczy watek
         # monitora na stale, wiec bez tego jedynym wyjsciem byl powrot do menu
@@ -483,12 +510,12 @@ class TestScreen:
         self.interlock_retry_btn = tk.Button(
             self.interlock_frame, text="↻ Połącz ponownie z interlockiem",
             bg="#607D8B", fg=self.config.COLOR_WHITE,
-            font=("Arial", 10, "bold"), relief=tk.FLAT, cursor="hand2",
+            font=ui.font(10, "bold"), relief=tk.FLAT, cursor="hand2",
             command=self._retry_interlock)
 
     def _create_control_buttons(self) -> None:
         frame = tk.Frame(self.main_frame, bg=self.config.COLOR_BG)
-        frame.pack(fill=tk.X, pady=(0, 8))
+        frame.pack(fill=tk.X, pady=ui.px((0, 8)))
 
         # Przycisk "START TEST" zostal usuniety: byl ustawiany na
         # state="disabled" w 17 miejscach i ani razu na "normal". Start jest
@@ -496,17 +523,17 @@ class TestScreen:
         # nie dziala, uczy operatora ignorowac przyciski.
         self.stop_button = tk.Button(
             frame, text="STOP", bg=self.config.COLOR_ERROR,
-            fg=self.config.COLOR_WHITE, font=("Arial", 15, "bold"), height=2,
+            fg=self.config.COLOR_WHITE, font=ui.font(15, "bold"), height=2,
             relief=tk.FLAT, cursor="hand2", state="disabled",
             command=self._stop_test)
-        self.stop_button.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 5))
+        self.stop_button.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=ui.px((0, 5)))
 
         self.next_sn_button = tk.Button(
             frame, text="➜ Następny SN", bg="#607D8B",
-            fg=self.config.COLOR_WHITE, font=("Arial", 15, "bold"), height=2,
+            fg=self.config.COLOR_WHITE, font=ui.font(15, "bold"), height=2,
             relief=tk.FLAT, cursor="hand2", state="disabled",
             command=self._open_sn_dialog_manually)
-        self.next_sn_button.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(5, 0))
+        self.next_sn_button.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=ui.px((5, 0)))
 
 
 
@@ -515,19 +542,19 @@ class TestScreen:
                          relief=tk.RAISED, borderwidth=2)
         outer.pack(fill=tk.X)
         tk.Label(outer, text="Ostatnie wyniki", bg=self.config.COLOR_WHITE,
-                 fg=self.config.COLOR_PRIMARY, font=("Arial", 9, "bold")).pack(
-                     anchor="w", padx=10, pady=(4, 2))
+                 fg=self.config.COLOR_PRIMARY, font=ui.font(9, "bold")).pack(
+                     anchor="w", padx=ui.px(10), pady=ui.px((4, 2)))
 
         header = tk.Frame(outer, bg=self.config.COLOR_PRIMARY)
-        header.pack(fill=tk.X, padx=10)
+        header.pack(fill=tk.X, padx=ui.px(10))
         for text, width in (("Czas", 8), ("Numer seryjny", 20),
                             ("Model", 14), ("Wynik", 6), ("Uwaga", 18)):
             tk.Label(header, text=text, bg=self.config.COLOR_PRIMARY,
-                     fg=self.config.COLOR_WHITE, font=("Arial", 8, "bold"),
-                     width=width, pady=2).pack(side=tk.LEFT)
+                     fg=self.config.COLOR_WHITE, font=ui.font(8, "bold"),
+                     width=width, pady=ui.px(2)).pack(side=tk.LEFT)
 
         self._history_frame = tk.Frame(outer, bg=self.config.COLOR_WHITE)
-        self._history_frame.pack(fill=tk.X, padx=10, pady=(1, 5))
+        self._history_frame.pack(fill=tk.X, padx=ui.px(10), pady=ui.px((1, 5)))
         self._refresh_history()
 
     def _refresh_history(self) -> None:
@@ -538,7 +565,7 @@ class TestScreen:
         if not self._recent_results:
             tk.Label(self._history_frame, text="Brak wyników w tej sesji",
                      bg=self.config.COLOR_WHITE, fg="#aaaaaa",
-                     font=("Arial", 8, "italic")).pack(pady=3)
+                     font=ui.font(8, "italic")).pack(pady=ui.px(3))
             return
         for position, entry in enumerate(reversed(self._recent_results)):
             background = "#f5f5f5" if position % 2 == 0 else self.config.COLOR_WHITE
@@ -555,7 +582,7 @@ class TestScreen:
                 (entry["note"], 18, self.config.COLOR_ERROR),
             ):
                 tk.Label(row, text=text, bg=background, fg=color,
-                         font=("Arial", 8), width=width, pady=2).pack(side=tk.LEFT)
+                         font=ui.font(8), width=width, pady=ui.px(2)).pack(side=tk.LEFT)
 
     # ------------------------------------------------------------------ #
     # POLACZENIA
@@ -648,7 +675,7 @@ class TestScreen:
                      f"w menu SYSTEM testera i w panelu Stanowisko. "
                      f"Poprawne sztuki mogą być odrzucane.")
             if not self.sampling_warning_label.winfo_ismapped():
-                self.sampling_warning_label.pack(pady=(0, 4))
+                self.sampling_warning_label.pack(pady=ui.px((0, 4)))
         elif self.sampling_warning_label.winfo_ismapped():
             self.sampling_warning_label.pack_forget()
 
@@ -704,7 +731,7 @@ class TestScreen:
             return
         if offer_retry and self.interlock is not None:
             if not button.winfo_ismapped():
-                button.pack(pady=(0, 8))
+                button.pack(pady=ui.px((0, 8)))
             button.config(state="normal", text="↻ Połącz ponownie z interlockiem")
         elif button.winfo_ismapped():
             button.pack_forget()
@@ -1333,7 +1360,7 @@ class TestScreen:
             active = index == self._current_step
             labels["Nazwa"].config(
                 bg="#fff59d" if active else labels["_bg"],
-                font=("Arial", 9, "bold") if active else ("Arial", 9))
+                font=ui.font(9, "bold") if active else ui.font(9))
         if 1 <= self._current_step <= self.profile.step_count:
             name = self.profile.steps[self._current_step - 1]["name"]
             self.live_title.config(
@@ -1349,7 +1376,7 @@ class TestScreen:
             labels["Wynik"].config(
                 text=entry["result"],
                 fg=self.config.COLOR_ACCENT if passed else self.config.COLOR_ERROR)
-            labels["Nazwa"].config(bg=labels["_bg"], font=("Arial", 9))
+            labels["Nazwa"].config(bg=labels["_bg"], font=ui.font(9))
 
     # ------------------------------------------------------------------ #
     # ZAKONCZENIE
@@ -1473,7 +1500,7 @@ class TestScreen:
                  "Zawołaj technologa.",
             fg=self.config.COLOR_ERROR, bg="#FFEBEE")
         if not self.storage_warning_label.winfo_ismapped():
-            self.storage_warning_label.pack(fill=tk.X, pady=(2, 4))
+            self.storage_warning_label.pack(fill=tk.X, pady=ui.px((2, 4)))
         messagebox.showerror(
             "Błąd zapisu raportu",
             f"Nie udało się zapisać raportu ani kopii awaryjnej:\n{error}\n\n"
@@ -1502,7 +1529,7 @@ class TestScreen:
                      f"Zawołaj technologa.",
                 fg=self.config.COLOR_WARNING, bg="#FFF3E0")
             if not label.winfo_ismapped():
-                label.pack(fill=tk.X, pady=(2, 4))
+                label.pack(fill=tk.X, pady=ui.px((2, 4)))
         elif label.winfo_ismapped():
             label.pack_forget()
 
@@ -1747,15 +1774,18 @@ class TestScreen:
 
         dialog = tk.Toplevel(self.parent)
         dialog.title("Wynik testu")
-        dialog.geometry("560x420")
+        dlg_w, dlg_h = ui.px(560), ui.px(420)
+        dialog.geometry(f"{dlg_w}x{dlg_h}")
         dialog.configure(bg=self.config.COLOR_WHITE)
         dialog.transient(self.parent)
         dialog.grab_set()
         dialog.resizable(False, False)
         dialog.protocol("WM_DELETE_WINDOW", self._back_from_dialog)
         dialog.update_idletasks()
-        x = self.parent.winfo_screenwidth() // 2 - 280
-        y = self.parent.winfo_screenheight() // 2 - 210
+        # Wysrodkowanie liczone z FAKTYCZNEGO rozmiaru okna. Wpisane na
+        # sztywno 280/210 rozjezdzalo sie, gdy tylko okno zmienilo rozmiar.
+        x = max(0, self.parent.winfo_screenwidth() // 2 - dlg_w // 2)
+        y = max(0, self.parent.winfo_screenheight() // 2 - dlg_h // 2)
         dialog.geometry(f"+{x}+{y}")
         self.sn_dialog = dialog
 
@@ -1766,40 +1796,40 @@ class TestScreen:
         self.sn_result_frame.pack(fill=tk.X)
         tk.Label(self.sn_result_frame, text="WYNIK",
                  bg=self.config.COLOR_ACCENT, fg=self.config.COLOR_WHITE,
-                 font=("Arial", 11, "bold")).pack(pady=(10, 0))
+                 font=ui.font(11, "bold")).pack(pady=ui.px((10, 0)))
         self.sn_result_label = tk.Label(
             self.sn_result_frame, text=result, bg=self.config.COLOR_ACCENT,
-            fg=self.config.COLOR_WHITE, font=("Arial", 46, "bold"))
-        self.sn_result_label.pack(pady=(0, 2))
+            fg=self.config.COLOR_WHITE, font=ui.font(46, "bold"))
+        self.sn_result_label.pack(pady=ui.px((0, 2)))
         self.sn_action_label = tk.Label(
             self.sn_result_frame, text="", bg=self.config.COLOR_ACCENT,
-            fg=self.config.COLOR_WHITE, font=("Arial", 15, "bold"))
-        self.sn_action_label.pack(pady=(0, 12))
+            fg=self.config.COLOR_WHITE, font=ui.font(15, "bold"))
+        self.sn_action_label.pack(pady=ui.px((0, 12)))
 
         self.sn_serial_label = tk.Label(
             dialog, text="", bg=self.config.COLOR_WHITE, fg="#555555",
-            font=("Consolas", 12))
-        self.sn_serial_label.pack(pady=(10, 0))
+            font=ui.font(12, "", "Consolas"))
+        self.sn_serial_label.pack(pady=ui.px((10, 0)))
 
         tk.Label(dialog, text="Zeskanuj kolejny numer seryjny:",
                  bg=self.config.COLOR_WHITE, fg="#333333",
-                 font=("Arial", 12, "bold")).pack(pady=(10, 5))
+                 font=ui.font(12, "bold")).pack(pady=ui.px((10, 5)))
 
-        self.sn_entry = tk.Entry(dialog, font=("Consolas", 18, "bold"), width=20,
+        self.sn_entry = tk.Entry(dialog, font=ui.font(18, "bold", "Consolas"), width=20,
                                  justify="center", relief=tk.SOLID, borderwidth=2)
-        self.sn_entry.pack(pady=5, padx=30, ipady=4)
+        self.sn_entry.pack(pady=ui.px(5), padx=ui.px(30), ipady=ui.px(4))
         self.sn_entry.focus_set()
         self.sn_entry.bind("<Return>", lambda event: self._confirm_next_sn())
 
         self.sn_status_lbl = tk.Label(
             dialog, text=self._sn_instruction(), bg=self.config.COLOR_WHITE,
-            fg="#555555", font=("Arial", 10))
-        self.sn_status_lbl.pack(pady=(2, 0))
+            fg="#555555", font=ui.font(10))
+        self.sn_status_lbl.pack(pady=ui.px((2, 0)))
 
         tk.Button(dialog, text="Powrót do menu", bg=self.config.COLOR_PRIMARY,
-                  fg=self.config.COLOR_WHITE, font=("Arial", 11, "bold"),
+                  fg=self.config.COLOR_WHITE, font=ui.font(11, "bold"),
                   width=18, relief=tk.FLAT, cursor="hand2",
-                  command=self._back_from_dialog).pack(pady=12)
+                  command=self._back_from_dialog).pack(pady=ui.px(12))
         self._paint_sn_dialog(result)
 
     def _sn_instruction(self) -> str:

@@ -27,7 +27,7 @@ from typing import Any
 from admin_panel import AdminPanel
 from product_profile import ProductCatalog
 from security import AccessGate, audit, verify_password
-from station_config import StationConfig
+from station_config import UI_AUTOFIT_PASSES, StationConfig, ui
 
 
 class HiPotApp:
@@ -62,6 +62,16 @@ class HiPotApp:
 
     def _setup_window(self) -> None:
         self.root.title(self.config.WINDOW_TITLE)
+        # MUSI byc przed _build_screen(): wspolczynnik skali jest czytany
+        # w chwili tworzenia kazdego widgetu, a Tk nie przelicza czcionki
+        # wpisanej w gotowy widget. Ustawiony raz, obowiazuje takze ekran
+        # testowy i panel inzynieryjny.
+        factor = ui.configure_from(self.root)
+        print(f"[GUI] Ekran {self.root.winfo_screenwidth()}x"
+              f"{self.root.winfo_screenheight()}, {ui.describe()}")
+        if factor < 1.0:
+            print("[GUI] Interfejs zmniejszony, zeby zmiescil sie na ekranie "
+                  "stanowiska.")
         try:
             # "zoomed" istnieje tylko w Windows; brak obslugi nie moze
             # przewrocic startu aplikacji.
@@ -95,7 +105,15 @@ class HiPotApp:
         # fatalny handler Tk. Operator ma dostac czytelny komunikat i moc
         # wrocic do pracy.
         try:
-            self._build_screen_unsafe()
+            # Budowa az do skutku: po kazdym podejsciu mierzymy, czy ekran
+            # miesci sie w pionie, i jesli nie - zmniejszamy skale i
+            # budujemy ponownie. Na monitorze, na ktorym ekran sie miesci,
+            # petla konczy sie po pierwszym obiegu i nic sie nie zmienia.
+            for _ in range(UI_AUTOFIT_PASSES):
+                self._build_screen_unsafe()
+                if not ui.autofit(self.root):
+                    break
+                self._clear_before_rebuild()
         except Exception as exc:
             print(f"[GUI] Blad budowy ekranu startowego: {exc!r}")
             traceback.print_exc()
@@ -112,20 +130,29 @@ class HiPotApp:
         frame.pack(fill=tk.BOTH, expand=True)
         tk.Label(frame, text="⛔ Błąd budowy ekranu",
                  bg=self.config.COLOR_ERROR, fg=self.config.COLOR_WHITE,
-                 font=("Arial", 24, "bold")).pack(pady=(60, 10))
+                 font=ui.font(24, "bold")).pack(pady=ui.px((60, 10)))
         tk.Label(frame, text=f"{exc}\n\nZgłoś błąd.",
                  bg=self.config.COLOR_ERROR, fg="#FFEBEE",
-                 font=("Arial", 12), justify="center",
-                 wraplength=900).pack(pady=(0, 20), padx=30)
+                 font=ui.font(12), justify="center",
+                 wraplength=ui.px(900)).pack(pady=ui.px((0, 20)), padx=ui.px(30))
         tk.Button(frame, text="Spróbuj ponownie", bg=self.config.COLOR_WHITE,
-                  fg=self.config.COLOR_ERROR, font=("Arial", 13, "bold"),
-                  relief=tk.FLAT, cursor="hand2", padx=20, pady=8,
+                  fg=self.config.COLOR_ERROR, font=ui.font(13, "bold"),
+                  relief=tk.FLAT, cursor="hand2", padx=ui.px(20), pady=ui.px(8),
                   command=self.show_scan_screen).pack()
+
+    def _clear_before_rebuild(self) -> None:
+        """Sprzata ekran przed kolejnym podejsciem dopasowania skali."""
+        for widget in self.root.winfo_children():
+            try:
+                widget.destroy()
+            except tk.TclError:
+                pass
+        self._clear_screen_widgets()
 
     def _build_screen_unsafe(self) -> None:
         self._create_header()
         self.main_frame = tk.Frame(self.root, bg=self.config.COLOR_BG)
-        self.main_frame.pack(expand=True, fill=tk.BOTH, padx=20, pady=(16, 50))
+        self.main_frame.pack(expand=True, fill=tk.BOTH, padx=ui.px(20), pady=ui.px((16, 50)))
 
         self._create_integrity_banner(self.main_frame)
         self._create_scan_panel(self.main_frame)
@@ -173,44 +200,46 @@ class HiPotApp:
         self._build_screen()
 
     def _create_header(self) -> None:
-        header = tk.Frame(self.root, bg=self.config.COLOR_PRIMARY, height=68)
+        header = tk.Frame(self.root, bg=self.config.COLOR_PRIMARY,
+                          height=ui.px(68))
         header.pack(fill=tk.X)
         header.pack_propagate(False)
         tk.Label(header, text=self.config.WINDOW_TITLE,
                  bg=self.config.COLOR_PRIMARY, fg=self.config.COLOR_WHITE,
-                 font=("Arial", 21, "bold")).pack(side=tk.LEFT, padx=20, pady=14)
+                 font=ui.font(21, "bold")).pack(side=tk.LEFT, padx=ui.px(20), pady=ui.px(14))
         # ID stanowiska musi byc widoczne: przy audycie i przy zgloszeniu
         # awarii to pierwsza informacja, o ktora ktos zapyta.
         tk.Label(header, text=f"Stanowisko: {self.config.STATION_ID}",
                  bg=self.config.COLOR_PRIMARY, fg="#C5CAE9",
-                 font=("Arial", 13, "bold")).pack(side=tk.RIGHT, padx=20)
+                 font=ui.font(13, "bold")).pack(side=tk.RIGHT, padx=ui.px(20))
 
     def _create_footer(self) -> None:
-        footer = tk.Frame(self.root, bg=self.config.COLOR_PRIMARY, height=38)
+        footer = tk.Frame(self.root, bg=self.config.COLOR_PRIMARY,
+                          height=ui.px(38))
         footer.pack(side=tk.BOTTOM, fill=tk.X)
         footer.pack_propagate(False)
         tk.Label(footer, text=self.config.footer_left(),
                  bg=self.config.COLOR_PRIMARY, fg=self.config.COLOR_WHITE,
-                 font=("Arial", 10, "bold")).pack(side=tk.LEFT, padx=20, pady=9)
+                 font=ui.font(10, "bold")).pack(side=tk.LEFT, padx=ui.px(20), pady=ui.px(9))
         tk.Label(footer, text="Autor: Kacper Urbanowicz",
                  bg=self.config.COLOR_PRIMARY, fg=self.config.COLOR_WHITE,
-                 font=("Arial", 10, "bold")).pack(side=tk.RIGHT, padx=20, pady=9)
+                 font=ui.font(10, "bold")).pack(side=tk.RIGHT, padx=ui.px(20), pady=ui.px(9))
 
     def _create_integrity_banner(self, parent) -> None:
         """Stan kontroli sum profili - widoczny, nie schowany w logu."""
         if self.integrity.blocked:
             frame = tk.Frame(parent, bg=self.config.COLOR_ERROR)
-            frame.pack(fill=tk.X, pady=(0, 8))
+            frame.pack(fill=tk.X, pady=ui.px((0, 8)))
             tk.Label(frame,
                      text="⛔ TESTOWANIE ZABLOKOWANE — profile nie zgadzają się "
                           "z manifestem",
                      bg=self.config.COLOR_ERROR, fg=self.config.COLOR_WHITE,
-                     font=("Arial", 15, "bold")).pack(pady=(8, 2))
+                     font=ui.font(15, "bold")).pack(pady=ui.px((8, 2)))
             detail = self.integrity.error or "; ".join(self.integrity.problems)
             tk.Label(frame, text=f"{detail}\n\nZgłoś błąd.",
                      bg=self.config.COLOR_ERROR, fg="#FFEBEE",
-                     font=("Arial", 10), justify="center",
-                     wraplength=1000).pack(pady=(0, 8), padx=20)
+                     font=ui.font(10), justify="center",
+                     wraplength=ui.px(1000)).pack(pady=ui.px((0, 8)), padx=ui.px(20))
             return
         # Informacja o RODZAJU manifestu (lokalny kontra zewnetrzny) jest
         # dla technologa, nie dla operatora - operator nie ma jak na nia
@@ -223,19 +252,19 @@ class HiPotApp:
         if not self.catalog.errors:
             return
         frame = tk.Frame(parent, bg="#ffebee", relief=tk.RAISED, borderwidth=2)
-        frame.pack(fill=tk.X, pady=(10, 0))
+        frame.pack(fill=tk.X, pady=ui.px((10, 0)))
         tk.Label(frame, text="⚠ Profile produktów odrzucone przy wczytaniu",
                  bg="#ffebee", fg=self.config.COLOR_ERROR,
-                 font=("Arial", 10, "bold")).pack(anchor="w", padx=12, pady=(6, 2))
+                 font=ui.font(10, "bold")).pack(anchor="w", padx=ui.px(12), pady=ui.px((6, 2)))
         for name, error in sorted(self.catalog.errors.items()):
             tk.Label(frame, text=f"• {name}: {error}", bg="#ffebee", fg="#b71c1c",
-                     font=("Arial", 9), justify="left", wraplength=900).pack(
-                         anchor="w", padx=22, pady=1)
+                     font=ui.font(9), justify="left", wraplength=ui.px(900)).pack(
+                         anchor="w", padx=ui.px(22), pady=ui.px(1))
         tk.Label(frame,
                  text="Wyroby przypisane do tych profili nie zostaną "
                       "przetestowane do czasu poprawienia plików.",
-                 bg="#ffebee", fg="#b71c1c", font=("Arial", 8, "italic")).pack(
-                     anchor="w", padx=12, pady=(2, 6))
+                 bg="#ffebee", fg="#b71c1c", font=ui.font(8, "italic")).pack(
+                     anchor="w", padx=ui.px(12), pady=ui.px((2, 6)))
 
     # ------------------------------------------------------------------ #
     # SKANOWANIE S/N
@@ -245,19 +274,19 @@ class HiPotApp:
         center.pack(expand=True)
         panel = tk.Frame(center, bg=self.config.COLOR_WHITE,
                          relief=tk.RAISED, borderwidth=2)
-        panel.pack(padx=50, pady=30)
+        panel.pack(padx=ui.px(50), pady=ui.px(30))
 
         # Krok 1 - wybor profilu.
         tk.Label(panel, text="1.  Wybierz profil testowy",
                  bg=self.config.COLOR_WHITE, fg=self.config.COLOR_PRIMARY,
-                 font=("Arial", 17, "bold")).pack(pady=(24, 8), padx=40,
+                 font=ui.font(17, "bold")).pack(pady=ui.px((24, 8)), padx=ui.px(40),
                                                   anchor="w")
         self._create_profile_selector(panel)
 
         # Krok 2 - numer seryjny.
         tk.Label(panel, text="2.  Zeskanuj numer seryjny",
                  bg=self.config.COLOR_WHITE, fg=self.config.COLOR_PRIMARY,
-                 font=("Arial", 17, "bold")).pack(pady=(18, 6), padx=40,
+                 font=ui.font(17, "bold")).pack(pady=ui.px((18, 6)), padx=ui.px(40),
                                                   anchor="w")
 
         # Numer seryjny jest ZAWSZE wielkimi literami. Podnoszenie w locie,
@@ -266,31 +295,31 @@ class HiPotApp:
         self._uppercase_pending = False
         self._serial_var = tk.StringVar()
         self._serial_var.trace_add("write", self._force_uppercase_serial)
-        self.serial_entry = tk.Entry(panel, font=("Consolas", 22, "bold"),
+        self.serial_entry = tk.Entry(panel, font=ui.font(22, "bold", "Consolas"),
                                      width=22, justify="center",
                                      relief=tk.SOLID, borderwidth=2,
                                      textvariable=self._serial_var)
-        self.serial_entry.pack(pady=(0, 4), padx=50, ipady=6)
+        self.serial_entry.pack(pady=ui.px((0, 4)), padx=ui.px(50), ipady=ui.px(6))
         self.serial_entry.focus()
         self.serial_entry.bind("<Return>", lambda event: self._process_serial())
 
         self.serial_hint_label = tk.Label(
             panel, text="", bg=self.config.COLOR_WHITE, fg="#777777",
-            font=("Arial", 10))
-        self.serial_hint_label.pack(pady=(0, 6))
+            font=ui.font(10))
+        self.serial_hint_label.pack(pady=ui.px((0, 6)))
 
         self.scan_status_label = tk.Label(panel, text="",
                                          bg=self.config.COLOR_WHITE,
-                                         font=("Arial", 13, "bold"),
-                                         wraplength=520, justify="center")
-        self.scan_status_label.pack(pady=6)
+                                         font=ui.font(13, "bold"),
+                                         wraplength=ui.px(520), justify="center")
+        self.scan_status_label.pack(pady=ui.px(6))
 
         self.confirm_btn = tk.Button(
             panel, text="URUCHOM TEST", bg=self.config.COLOR_ACCENT,
-            fg=self.config.COLOR_WHITE, font=("Arial", 15, "bold"),
+            fg=self.config.COLOR_WHITE, font=ui.font(15, "bold"),
             width=22, height=2, relief=tk.FLAT, cursor="hand2",
             command=self._process_serial)
-        self.confirm_btn.pack(pady=(8, 28), padx=50)
+        self.confirm_btn.pack(pady=ui.px((8, 28)), padx=ui.px(50))
 
         if self.integrity.blocked:
             self.serial_entry.config(state="disabled")
@@ -331,10 +360,10 @@ class HiPotApp:
             labels.append(label)
 
         row = tk.Frame(parent, bg=self.config.COLOR_WHITE)
-        row.pack(pady=(0, 6), padx=50, fill=tk.X)
+        row.pack(pady=ui.px((0, 6)), padx=ui.px(50), fill=tk.X)
         tk.Label(row, text="Profil testowy:", bg=self.config.COLOR_WHITE,
-                 fg="#444444", font=("Arial", 13, "bold")).pack(side=tk.LEFT,
-                                                                padx=(0, 10))
+                 fg="#444444", font=ui.font(13, "bold")).pack(side=tk.LEFT,
+                                                                padx=ui.px((0, 10)))
 
         # Lista rozwijana Tk ma WLASNA czcionke, niezaleznie od czcionki pola.
         # Bez ustawienia obu operator widzi duzy tekst w polu i drobny
@@ -348,10 +377,10 @@ class HiPotApp:
         self.profile_combo = ttk.Combobox(
             row, textvariable=self._selected_profile_var, values=labels,
             state="readonly" if len(labels) > 1 else "disabled",
-            font=("Arial", 16, "bold"), width=24,
+            font=ui.font(16, "bold"), width=24,
             style="Profil.TCombobox")
         self.profile_combo.pack(side=tk.LEFT, fill=tk.X, expand=True,
-                                ipady=6)
+                                ipady=ui.px(6))
         self.profile_combo.bind("<<ComboboxSelected>>",
                                 lambda event: self._on_profile_selected())
 
@@ -359,16 +388,16 @@ class HiPotApp:
         # pytanie potwierdzajace. Jest widoczny przez caly czas pracy.
         self.profile_banner = tk.Frame(parent, bg=self.config.COLOR_ACTION_BG,
                                        relief=tk.SOLID, borderwidth=1)
-        self.profile_banner.pack(fill=tk.X, padx=50, pady=(10, 6))
+        self.profile_banner.pack(fill=tk.X, padx=ui.px(50), pady=ui.px((10, 6)))
         self.profile_banner_title = tk.Label(
             self.profile_banner, text="", bg=self.config.COLOR_ACTION_BG,
-            fg=self.config.COLOR_ACTION, font=("Arial", 18, "bold"))
-        self.profile_banner_title.pack(pady=(8, 0))
+            fg=self.config.COLOR_ACTION, font=ui.font(18, "bold"))
+        self.profile_banner_title.pack(pady=ui.px((8, 0)))
         self.profile_info_label = tk.Label(
             self.profile_banner, text="", bg=self.config.COLOR_ACTION_BG,
-            fg="#1B3A57", font=("Arial", 12), justify="center",
-            wraplength=560)
-        self.profile_info_label.pack(pady=(2, 9), padx=12)
+            fg="#1B3A57", font=ui.font(12), justify="center",
+            wraplength=ui.px(560))
+        self.profile_info_label.pack(pady=ui.px((2, 9)), padx=ui.px(12))
         self._on_profile_selected()
 
     def _style_profile_combobox(self) -> None:
@@ -383,7 +412,7 @@ class HiPotApp:
             style = ttk.Style()
             style.configure("Profil.TCombobox", arrowsize=22, padding=6)
             self.root.option_add("*TCombobox*Listbox.font",
-                                 ("Arial", 16, "bold"))
+                                 ui.font(16, "bold"))
             self.root.option_add("*TCombobox*Listbox.selectBackground",
                                  self.config.COLOR_PRIMARY)
             self.root.option_add("*TCombobox*Listbox.selectForeground",
@@ -648,7 +677,7 @@ class HiPotApp:
     def _show_password_dialog(self) -> None:
         window = tk.Toplevel(self.root)
         window.title("Panel inżynieryjny")
-        window.geometry("420x240")
+        window.geometry(f"{ui.px(420)}x{ui.px(240)}")
         window.configure(bg=self.config.COLOR_BG)
         window.resizable(False, False)
         window.transient(self.root)
@@ -656,20 +685,20 @@ class HiPotApp:
 
         frame = tk.Frame(window, bg=self.config.COLOR_WHITE, relief=tk.RAISED,
                          borderwidth=2)
-        frame.pack(expand=True, fill=tk.BOTH, padx=20, pady=20)
+        frame.pack(expand=True, fill=tk.BOTH, padx=ui.px(20), pady=ui.px(20))
         tk.Label(frame, text="Panel inżynieryjny",
                  bg=self.config.COLOR_WHITE, fg=self.config.COLOR_PRIMARY,
-                 font=("Arial", 14, "bold")).pack(pady=(18, 8))
+                 font=ui.font(14, "bold")).pack(pady=ui.px((18, 8)))
         tk.Label(frame, text="Wprowadź hasło:", bg=self.config.COLOR_WHITE,
-                 fg="#333333", font=("Arial", 11)).pack(pady=(6, 4))
+                 fg="#333333", font=ui.font(11)).pack(pady=ui.px((6, 4)))
 
-        entry = tk.Entry(frame, font=("Arial", 12), width=22, justify="center",
+        entry = tk.Entry(frame, font=ui.font(12), width=22, justify="center",
                          show="*", relief=tk.SOLID, borderwidth=2)
-        entry.pack(pady=8)
+        entry.pack(pady=ui.px(8))
         entry.focus()
 
         error_label = tk.Label(frame, text="", bg=self.config.COLOR_WHITE,
-                               fg=self.config.COLOR_ERROR, font=("Arial", 9))
+                               fg=self.config.COLOR_ERROR, font=ui.font(9))
         error_label.pack()
 
         if self._admin_gate.is_locked():
@@ -723,15 +752,15 @@ class HiPotApp:
 
         entry.bind("<Return>", lambda event: check_password())
         buttons = tk.Frame(frame, bg=self.config.COLOR_WHITE)
-        buttons.pack(pady=10)
+        buttons.pack(pady=ui.px(10))
         tk.Button(buttons, text="OK", bg=self.config.COLOR_ACCENT,
-                  fg=self.config.COLOR_WHITE, font=("Arial", 10, "bold"),
+                  fg=self.config.COLOR_WHITE, font=ui.font(10, "bold"),
                   width=10, relief=tk.FLAT, cursor="hand2",
-                  command=check_password).pack(side=tk.LEFT, padx=5)
+                  command=check_password).pack(side=tk.LEFT, padx=ui.px(5))
         tk.Button(buttons, text="Anuluj", bg="#999999",
-                  fg=self.config.COLOR_WHITE, font=("Arial", 10, "bold"),
+                  fg=self.config.COLOR_WHITE, font=ui.font(10, "bold"),
                   width=10, relief=tk.FLAT, cursor="hand2",
-                  command=window.destroy).pack(side=tk.LEFT, padx=5)
+                  command=window.destroy).pack(side=tk.LEFT, padx=ui.px(5))
 
     def _show_admin_panel(self) -> None:
         if self.current_test_screen is not None or self._scan_pending:
